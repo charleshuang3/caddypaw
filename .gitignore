@@ -1,0 +1,5 @@
+# bin/ store local built caddy
+bin
+
+# .local/ store local config files
+.local
