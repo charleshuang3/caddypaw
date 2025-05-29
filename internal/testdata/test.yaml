@@ -1,0 +1,13 @@
+auth_url: https://example.com:8443/oauth2/authorize
+token_url: https://example.com:8443/oauth2/token
+firewall_url: http://127.0.0.1:8444/
+public_key_pem: |
+  -----BEGIN PUBLIC KEY-----
+  MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyEZL5zXXfIbgFXiARkcL
+  HPUlWYU2eDBiMWsJY4ayUAyHiQPCJyOR7kFNHNUu2GdLTdMYtQJ7zfAJgWlw+oyG
+  RR+jukJC5XZIrpdv9v4SjtPm4XcOhyH75Q7JwEkCwGE/ynlXw0TXrOfaMaNFmJIZ
+  U4F7fBaW2LLHI7hyg9O8yFTlQ583bgTQOIeoCnBHbmhAYDp/VQTSV4W8b3GIdnSo
+  y3oczm2yVQm41iHXBIvvH4gYFO/A51SzgY3Zubsq7vzLAKaIlAsJqeLDO2zCMXBz
+  OiinSIUACoE/d5zWg0gaRO2Wq5QEj3Wq5bCDzztr7889HoAPEvmIGTcrlm+f7qiP
+  dwIDAQAB
+  -----END PUBLIC KEY-----

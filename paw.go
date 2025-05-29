@@ -8,6 +8,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -20,7 +21,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 }
 
 // Paw is a middleware module that prints messages before and after handling a request.
-type Paw struct{}
+type Paw struct {
+	logger *zap.Logger
+}
 
 // CaddyModule returns the Caddy module information.
 func (Paw) CaddyModule() caddy.ModuleInfo {
@@ -32,7 +35,19 @@ func (Paw) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the module.
 func (p *Paw) Provision(ctx caddy.Context) error {
-	// No provisioning needed for this simple example
+	appModule, err := ctx.App(globalOptionAppName)
+	if err != nil {
+		return err
+	}
+
+	conf := appModule.(*globalOptionModule).AuthnConfig
+
+	p.logger = ctx.Logger(p)
+	p.logger.Info("authn in paw",
+		zap.String("auth_url", conf.AuthURL),
+		zap.String("token_url", conf.TokenURL),
+	)
+
 	return nil
 }
 
@@ -71,8 +86,8 @@ func (p *Paw) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-// Interface guards
 var (
+	// Interface guards
 	_ caddy.Provisioner           = (*Paw)(nil)
 	_ caddy.Validator             = (*Paw)(nil)
 	_ caddyhttp.MiddlewareHandler = (*Paw)(nil)
