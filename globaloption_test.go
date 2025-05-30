@@ -24,14 +24,7 @@ example.com {
 }
 `
 
-	adapter := caddyfile.Adapter{ServerType: &httpcaddyfile.ServerType{}}
-	adaptedJSON, warnings, err := adapter.Adapt([]byte(caddyfileInput), nil)
-	require.NoError(t, err)
-	require.Empty(t, warnings)
-
-	cfg := &caddy.Config{}
-	err = caddy.StrictUnmarshalJSON(adaptedJSON, cfg)
-	require.NoError(t, err)
+	cfg := caddyConfig(t, caddyfileInput)
 
 	rawAuthn, ok := cfg.AppsRaw[globalOptionAppName]
 	require.True(t, ok)
@@ -53,4 +46,19 @@ example.com {
 	}
 
 	assert.Equal(t, want, got)
+}
+
+func caddyConfig(t *testing.T, input string) *caddy.Config {
+	t.Helper()
+
+	adapter := caddyfile.Adapter{ServerType: &httpcaddyfile.ServerType{}}
+	adaptedJSON, warnings, err := adapter.Adapt([]byte(input), nil)
+	require.NoError(t, err)
+	require.Empty(t, warnings)
+
+	cfg := &caddy.Config{}
+	err = caddy.StrictUnmarshalJSON(adaptedJSON, cfg)
+	require.NoError(t, err)
+
+	return cfg
 }

@@ -3,7 +3,10 @@ package caddypaw
 import (
 	"testing"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/charleshuang3/caddypaw/internal/config"
+	"github.com/charleshuang3/caddypaw/internal/testdata"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -36,14 +39,14 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 				client_secret the-client-secret
 				roles role1 role2
 				callback_url https://example.com/callback
-				public_urls url:url1 glob:pattern1
+				public_urls path_prefix:/path1 path_prefix:/path2
 			}`,
 			expected: &Auth{
 				ClientID:     "the-client-id",
 				ClientSecret: "the-client-secret",
 				Roles:        []string{"role1", "role2"},
 				CallbackURL:  "https://example.com/callback",
-				PublicURLs:   []string{"url:url1", "glob:pattern1"},
+				PublicURLs:   []*urlMatcher{{"path_prefix", "/path1"}, {"path_prefix", "/path2"}},
 			},
 			expectError: false,
 		},
@@ -193,4 +196,34 @@ func TestAuthValidate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAuthProvision(t *testing.T) {
+	caddyfileInput := `{
+	authn_yaml_file internal/testdata/test.yaml
+}
+
+example.com {
+	respond "hi"
+}
+`
+
+	cfg := caddyConfig(t, caddyfileInput)
+	ctx, err := caddy.ProvisionContext(cfg)
+	require.NoError(t, err)
+
+	a := &Auth{}
+
+	err = a.Provision(ctx)
+	require.NoError(t, err)
+
+	assert.Equal(t,
+		&config.AuthnConfig{
+			AuthURL:      "https://example.com:8443/oauth2/authorize",
+			TokenURL:     "https://example.com:8443/oauth2/token",
+			FirewallURL:  "http://127.0.0.1:8444/",
+			PublicKeyPEM: testdata.PublicKeyPEM,
+		}, a.authnConfig)
+
+	assert.NotNil(t, a.publicKey)
 }

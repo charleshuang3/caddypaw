@@ -8,7 +8,10 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"go.uber.org/zap"
+
+	"github.com/charleshuang3/caddypaw/internal/config"
 )
 
 func init() {
@@ -24,11 +27,17 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 type Auth struct {
 	logger *zap.Logger
 
-	ClientID     string   `json:"client_id,omitempty"`
-	ClientSecret string   `json:"client_secret,omitempty"`
-	Roles        []string `json:"roles,omitempty"`
-	CallbackURL  string   `json:"callback_url,omitempty"`
-	PublicURLs   []string `json:"public_urls,omitempty"`
+	// from paw_auth directive
+
+	ClientID     string        `json:"client_id,omitempty"`
+	ClientSecret string        `json:"client_secret,omitempty"`
+	Roles        []string      `json:"roles,omitempty"`
+	CallbackURL  string        `json:"callback_url,omitempty"`
+	PublicURLs   []*urlMatcher `json:"public_urls,omitempty"`
+
+	// from paw_global_option
+	authnConfig *config.AuthnConfig
+	publicKey   jwk.Key
 }
 
 // CaddyModule returns the Caddy module information.
@@ -40,39 +49,38 @@ func (Auth) CaddyModule() caddy.ModuleInfo {
 }
 
 // Provision sets up the module.
-func (p *Auth) Provision(ctx caddy.Context) error {
+func (a *Auth) Provision(ctx caddy.Context) error {
+	a.logger = ctx.Logger(a)
+
 	appModule, err := ctx.App(globalOptionAppName)
 	if err != nil {
 		return err
 	}
 
-	conf := appModule.(*globalOptionModule).AuthnConfig
+	gOption := appModule.(*globalOptionModule)
 
-	p.logger = ctx.Logger(p)
-	p.logger.Info("authn in paw_auth",
-		zap.String("auth_url", conf.AuthURL),
-		zap.String("token_url", conf.TokenURL),
-	)
+	a.authnConfig = gOption.AuthnConfig
+	a.publicKey = gOption.publicKey
 
 	return nil
 }
 
 // Validate ensures the module's configuration is valid.
-func (p *Auth) Validate() error {
-	if p.ClientID == "" {
+func (a *Auth) Validate() error {
+	if a.ClientID == "" {
 		return fmt.Errorf("client_id is required")
 	}
-	if p.ClientSecret == "" {
+	if a.ClientSecret == "" {
 		return fmt.Errorf("client_secret is required")
 	}
-	if len(p.Roles) == 0 {
+	if len(a.Roles) == 0 {
 		return fmt.Errorf("roles are required")
 	}
 	return nil
 }
 
 // ServeHTTP implements the caddyhttp.MiddlewareHandler interface.
-func (p *Auth) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+func (a *Auth) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	fmt.Println("before") // Print before handling the request
 
 	// Wrap the response writer to capture the status code or intercept the response
@@ -90,14 +98,14 @@ func (p *Auth) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.
 }
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
-func (p *Auth) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (a *Auth) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// the caddyfile config:
 	// paw_auth {
 	//   client_id the-client-id
 	//   client_secret the-client-secret
 	//   roles role1 role2
 	//   callback_url callback-url # optional
-	//   public_urls url:url glob:url-pattern #optional
+	//   public_urls path_prefix:/path path_prefix:/path #optional
 	// }
 	d.Next() // Consume directive name ("paw_auth")
 	if d.NextArg() {
@@ -110,27 +118,37 @@ func (p *Auth) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
-			p.ClientID = d.Val()
+			a.ClientID = d.Val()
 		case "client_secret":
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
-			p.ClientSecret = d.Val()
+			a.ClientSecret = d.Val()
 		case "roles":
-			p.Roles = d.RemainingArgs()
-			if len(p.Roles) == 0 {
+			a.Roles = d.RemainingArgs()
+			if len(a.Roles) == 0 {
 				return d.ArgErr()
 			}
 		case "callback_url":
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
-			p.CallbackURL = d.Val()
+			a.CallbackURL = d.Val()
 		case "public_urls":
-			p.PublicURLs = d.RemainingArgs()
-			if len(p.PublicURLs) == 0 {
-				return d.ArgErr()
+			list := d.RemainingArgs()
+
+			if len(list) == 0 {
+				return d.SyntaxErr("no public_urls specified")
 			}
+
+			for _, it := range list {
+				u, err := urlMatcherFromStr(it)
+				if err != nil {
+					return d.SyntaxErr(err.Error())
+				}
+				a.PublicURLs = append(a.PublicURLs, u)
+			}
+
 		default:
 			return d.Errf("unrecognized subdirective '%s'", d.Val())
 		}
