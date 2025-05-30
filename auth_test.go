@@ -5,10 +5,11 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/charleshuang3/caddypaw/internal/config"
-	"github.com/charleshuang3/caddypaw/internal/testdata"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/charleshuang3/caddypaw/internal/config"
+	"github.com/charleshuang3/caddypaw/internal/testdata"
 )
 
 func TestAuthUnmarshalCaddyfile(t *testing.T) {
