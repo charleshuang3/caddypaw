@@ -275,10 +275,11 @@ example.com {
 
 	assert.Equal(t,
 		&config.AuthnConfig{
-			AuthURL:      "https://example.com:8443/oauth2/authorize",
-			TokenURL:     "https://example.com:8443/oauth2/token",
-			FirewallURL:  "http://127.0.0.1:8444/",
-			PublicKeyPEM: testdata.PublicKeyPEM,
+			AuthURL:            "http://example.com:8443/oauth2/authorize",
+			TokenURL:           "http://example.com:8443/oauth2/token",
+			NonOIDCUserInfoURL: "http://example.com:8443/user/info",
+			FirewallURL:        "http://127.0.0.1:8444/",
+			PublicKeyPEM:       testdata.PublicKeyPEM,
 		}, a.authnConfig)
 
 	assert.NotNil(t, a.publicKey)

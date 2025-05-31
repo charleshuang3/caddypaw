@@ -4,14 +4,21 @@ import (
 	"fmt"
 	"net/http"
 
+	"bitbucket.org/creachadair/stringset"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/dgraph-io/ristretto/v2"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/charleshuang3/caddypaw/internal/config"
+)
+
+var (
+	httpClient = http.DefaultClient
 )
 
 func init() {
@@ -31,6 +38,17 @@ const (
 	authTypeServerCookies
 )
 
+func (ty *authType) String() string {
+	switch *ty {
+	case authTypeBasicAuth:
+		return "basic_auth"
+	case authTypeServerCookies:
+		return "server_cookies"
+	default:
+		return "none"
+	}
+}
+
 // AuthModule is a middleware module that handles authentication and authorization.
 type AuthModule struct {
 	logger *zap.Logger
@@ -47,6 +65,8 @@ type AuthModule struct {
 	// from paw_global_option
 	authnConfig *config.AuthnConfig
 	publicKey   jwk.Key
+
+	basicAuthCache *ristretto.Cache[string, *basicAuth]
 }
 
 // CaddyModule returns the Caddy module information.
@@ -59,6 +79,16 @@ func (AuthModule) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the module.
 func (a *AuthModule) Provision(ctx caddy.Context) error {
+	var err error
+	a.basicAuthCache, err = ristretto.NewCache(&ristretto.Config[string, *basicAuth]{
+		NumCounters: 1e7,
+		MaxCost:     1e7,
+		BufferItems: 16,
+	})
+	if err != nil {
+		return err
+	}
+
 	a.logger = ctx.Logger(a)
 
 	appModule, err := ctx.App(globalOptionAppName)
@@ -93,20 +123,62 @@ func (a *AuthModule) Validate() error {
 
 // ServeHTTP implements the caddyhttp.MiddlewareHandler interface.
 func (a *AuthModule) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	fmt.Println("before") // Print before handling the request
+	ok, user, err := a.checkAuth(w, r)
+	if err != nil {
+		if c := a.logger.Check(zapcore.ErrorLevel, "auth provider returned error"); c != nil {
+			c.Write(zap.String("provider", a.AuthType.String()), zap.Error(err))
+		}
+		return caddyhttp.Error(http.StatusInternalServerError, fmt.Errorf("internal error"))
+	}
+	if !ok {
+		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
+	}
 
-	// Wrap the response writer to capture the status code or intercept the response
-	// For now, we just print "after" before calling the next handler's ServeHTTP,
-	// which isn't exactly "after the server response" but rather "before the next handler".
-	// To truly print *after* the proxied server responds, we'd need a more complex setup,
-	// potentially involving wrapping the ResponseWriter or using a different hook point if available.
-	// However, for this simple "before"/"after" requirement, this demonstrates the middleware concept.
+	if ok := user.checkRole(a.Roles); !ok {
+		return caddyhttp.Error(http.StatusForbidden, fmt.Errorf("forbidden"))
+	}
 
-	err := next.ServeHTTP(w, r) // Call the next handler in the chain
-
-	fmt.Println("after") // Print after the next handler returns
+	err = next.ServeHTTP(w, r) // Call the next handler in the chain
 
 	return err
+}
+
+type userInfo struct {
+	Username   string `json:"username"`
+	Name       string `json:"name"`
+	Email      string `json:"email"`
+	Roles      string `json:"roles"` // multi-roles splitted by " "
+	UserID     string `json:"user_id"`
+	Picture    string `json:"picture"`
+	Expiration int64  `json:"exp"`
+
+	roles stringset.Set
+}
+
+func (u *userInfo) checkRole(allowRoles []string) bool {
+	for _, r := range allowRoles {
+		if u.roles.Contains(r) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkAuth of request, return can continue to next handler and error.
+func (a *AuthModule) checkAuth(w http.ResponseWriter, r *http.Request) (bool, *userInfo, error) {
+	switch a.AuthType {
+	case authTypeBasicAuth:
+		return a.checkBasicAuth(w, r)
+	case authTypeServerCookies:
+		return a.checkServerCookies(w, r)
+	default:
+		return false, nil, fmt.Errorf("unknown auth type: %d", a.AuthType)
+	}
+}
+
+func (a *AuthModule) checkServerCookies(w http.ResponseWriter, r *http.Request) (bool, *userInfo, error) {
+	// TODO
+	return false, nil, nil
 }
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
