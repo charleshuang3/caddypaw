@@ -16,7 +16,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 	tests := []struct {
 		name        string
 		caddyfile   string
-		expected    *Auth
+		expected    *AuthModule
 		expectError bool
 	}{
 		{
@@ -27,7 +27,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 				client_secret the-client-secret
 				roles role1 role2
 			}`,
-			expected: &Auth{
+			expected: &AuthModule{
 				AuthType:     authTypeBasicAuth,
 				ClientID:     "the-client-id",
 				ClientSecret: "the-client-secret",
@@ -43,7 +43,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 				client_secret the-client-secret
 				roles role1 role2
 			}`,
-			expected: &Auth{
+			expected: &AuthModule{
 				AuthType:     authTypeServerCookies,
 				ClientID:     "the-client-id",
 				ClientSecret: "the-client-secret",
@@ -61,7 +61,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 				callback_url https://example.com/callback
 				public_urls path_prefix:/path1 path_prefix:/path2
 			}`,
-			expected: &Auth{
+			expected: &AuthModule{
 				AuthType:     authTypeBasicAuth,
 				ClientID:     "the-client-id",
 				ClientSecret: "the-client-secret",
@@ -78,7 +78,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 				client_secret the-client-secret
 				roles role1
 			}`,
-			expected: &Auth{
+			expected: &AuthModule{
 				AuthType:     authTypeBasicAuth,
 				ClientSecret: "the-client-secret",
 				Roles:        []string{"role1"},
@@ -92,7 +92,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 				client_id the-client-id
 				roles role1
 			}`,
-			expected: &Auth{
+			expected: &AuthModule{
 				AuthType: authTypeBasicAuth,
 				ClientID: "the-client-id",
 				Roles:    []string{"role1"},
@@ -106,7 +106,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 				client_id the-client-id
 				client_secret the-client-secret
 			}`,
-			expected: &Auth{
+			expected: &AuthModule{
 				AuthType:     authTypeBasicAuth,
 				ClientID:     "the-client-id",
 				ClientSecret: "the-client-secret",
@@ -160,7 +160,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := caddyfile.NewTestDispenser(tt.caddyfile)
-			p := &Auth{}
+			p := &AuthModule{}
 			err := p.UnmarshalCaddyfile(d)
 
 			if tt.expectError {
@@ -181,12 +181,12 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 func TestAuthValidate(t *testing.T) {
 	tests := []struct {
 		name        string
-		auth        Auth
+		auth        AuthModule
 		expectError bool
 	}{
 		{
 			name: "valid configuration",
-			auth: Auth{
+			auth: AuthModule{
 				AuthType:     authTypeBasicAuth,
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
@@ -196,7 +196,7 @@ func TestAuthValidate(t *testing.T) {
 		},
 		{
 			name: "missing auth_type",
-			auth: Auth{
+			auth: AuthModule{
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
 				Roles:        []string{"admin", "user"},
@@ -205,7 +205,7 @@ func TestAuthValidate(t *testing.T) {
 		},
 		{
 			name: "missing client_id",
-			auth: Auth{
+			auth: AuthModule{
 				AuthType:     authTypeBasicAuth,
 				ClientSecret: "test-client-secret",
 				Roles:        []string{"admin"},
@@ -214,7 +214,7 @@ func TestAuthValidate(t *testing.T) {
 		},
 		{
 			name: "missing client_secret",
-			auth: Auth{
+			auth: AuthModule{
 				AuthType: authTypeBasicAuth,
 				ClientID: "test-client-id",
 				Roles:    []string{"admin"},
@@ -223,7 +223,7 @@ func TestAuthValidate(t *testing.T) {
 		},
 		{
 			name: "missing roles",
-			auth: Auth{
+			auth: AuthModule{
 				AuthType:     authTypeBasicAuth,
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
@@ -232,7 +232,7 @@ func TestAuthValidate(t *testing.T) {
 		},
 		{
 			name: "empty roles slice",
-			auth: Auth{
+			auth: AuthModule{
 				AuthType:     authTypeBasicAuth,
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
@@ -268,7 +268,7 @@ example.com {
 	ctx, err := caddy.ProvisionContext(cfg)
 	require.NoError(t, err)
 
-	a := &Auth{}
+	a := &AuthModule{}
 
 	err = a.Provision(ctx)
 	require.NoError(t, err)
