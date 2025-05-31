@@ -14,10 +14,11 @@ func TestLoadFromFile(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, &AuthnConfig{
-		AuthURL:      "https://example.com:8443/oauth2/authorize",
-		TokenURL:     "https://example.com:8443/oauth2/token",
-		FirewallURL:  "http://127.0.0.1:8444/",
-		PublicKeyPEM: testdata.PublicKeyPEM,
+		AuthURL:            "https://example.com:8443/oauth2/authorize",
+		TokenURL:           "https://example.com:8443/oauth2/token",
+		NonOIDCUserInfoURL: "https://example.com:8443/user/info",
+		FirewallURL:        "http://127.0.0.1:8444/",
+		PublicKeyPEM:       testdata.PublicKeyPEM,
 	}, conf)
 
 	assert.NotNil(t, conf.GetPublicKey())

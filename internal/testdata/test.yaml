@@ -1,5 +1,6 @@
 auth_url: https://example.com:8443/oauth2/authorize
 token_url: https://example.com:8443/oauth2/token
+non_oidc_userinfo_url: https://example.com:8443/user/info
 firewall_url: http://127.0.0.1:8444/
 public_key_pem: |
   -----BEGIN PUBLIC KEY-----

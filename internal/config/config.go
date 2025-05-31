@@ -10,10 +10,11 @@ import (
 )
 
 type AuthnConfig struct {
-	AuthURL      string `yaml:"auth_url" json:"auth_url"`
-	TokenURL     string `yaml:"token_url" json:"token_url"`
-	FirewallURL  string `yaml:"firewall_url" json:"firewall_url"`
-	PublicKeyPEM string `yaml:"public_key_pem" json:"public_key_pem"`
+	AuthURL            string `yaml:"auth_url" json:"auth_url"`
+	TokenURL           string `yaml:"token_url" json:"token_url"`
+	NonOIDCUserInfoURL string `yaml:"non_oidc_userinfo_url" json:"non_oidc_userinfo_url"`
+	FirewallURL        string `yaml:"firewall_url" json:"firewall_url"`
+	PublicKeyPEM       string `yaml:"public_key_pem" json:"public_key_pem"`
 }
 
 func LoadFromFile(path string) (*AuthnConfig, error) {
@@ -35,6 +36,10 @@ func LoadFromFile(path string) (*AuthnConfig, error) {
 
 	if res.TokenURL == "" {
 		return nil, errors.New("TokenURL cannot be empty")
+	}
+
+	if res.NonOIDCUserInfoURL == "" {
+		return nil, errors.New("NonOIDCUserInfoURL cannot be empty")
 	}
 
 	if res.FirewallURL == "" {
