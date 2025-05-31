@@ -23,12 +23,21 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	return &Auth{}, nil
 }
 
+type authType uint8
+
+const (
+	authTypeNone authType = iota
+	authTypeBasicAuth
+	authTypeServerCookies
+)
+
 // Auth is a middleware module that handles authentication and authorization.
 type Auth struct {
 	logger *zap.Logger
 
 	// from paw_auth directive
 
+	AuthType     authType      `json:"auth_type,omitempty"`
 	ClientID     string        `json:"client_id,omitempty"`
 	ClientSecret string        `json:"client_secret,omitempty"`
 	Roles        []string      `json:"roles,omitempty"`
@@ -67,6 +76,9 @@ func (a *Auth) Provision(ctx caddy.Context) error {
 
 // Validate ensures the module's configuration is valid.
 func (a *Auth) Validate() error {
+	if a.AuthType == authTypeNone {
+		return fmt.Errorf("auth_type is required, allow value basic_auth or server_cookies")
+	}
 	if a.ClientID == "" {
 		return fmt.Errorf("client_id is required")
 	}
@@ -101,6 +113,7 @@ func (a *Auth) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.
 func (a *Auth) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// the caddyfile config:
 	// paw_auth {
+	//   basic_auth / server_cookies
 	//   client_id the-client-id
 	//   client_secret the-client-secret
 	//   roles role1 role2
@@ -114,6 +127,16 @@ func (a *Auth) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 	for d.NextBlock(0) {
 		switch d.Val() {
+		case "basic_auth":
+			if a.AuthType != authTypeNone {
+				return d.SyntaxErr("auth type can only be set once")
+			}
+			a.AuthType = authTypeBasicAuth
+		case "server_cookies":
+			if a.AuthType != authTypeNone {
+				return d.SyntaxErr("auth type can only be set once")
+			}
+			a.AuthType = authTypeServerCookies
 		case "client_id":
 			if !d.NextArg() {
 				return d.ArgErr()

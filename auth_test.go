@@ -20,13 +20,31 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name: "valid configuration",
+			name: "valid configuration with basic_auth",
 			caddyfile: `paw_auth {
+				basic_auth
 				client_id the-client-id
 				client_secret the-client-secret
 				roles role1 role2
 			}`,
 			expected: &Auth{
+				AuthType:     authTypeBasicAuth,
+				ClientID:     "the-client-id",
+				ClientSecret: "the-client-secret",
+				Roles:        []string{"role1", "role2"},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid configuration with server_cookies",
+			caddyfile: `paw_auth {
+				server_cookies
+				client_id the-client-id
+				client_secret the-client-secret
+				roles role1 role2
+			}`,
+			expected: &Auth{
+				AuthType:     authTypeServerCookies,
 				ClientID:     "the-client-id",
 				ClientSecret: "the-client-secret",
 				Roles:        []string{"role1", "role2"},
@@ -36,6 +54,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 		{
 			name: "valid configuration with optional fields",
 			caddyfile: `paw_auth {
+				basic_auth
 				client_id the-client-id
 				client_secret the-client-secret
 				roles role1 role2
@@ -43,6 +62,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 				public_urls path_prefix:/path1 path_prefix:/path2
 			}`,
 			expected: &Auth{
+				AuthType:     authTypeBasicAuth,
 				ClientID:     "the-client-id",
 				ClientSecret: "the-client-secret",
 				Roles:        []string{"role1", "role2"},
@@ -54,10 +74,12 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 		{
 			name: "missing client_id",
 			caddyfile: `paw_auth {
+				basic_auth
 				client_secret the-client-secret
 				roles role1
 			}`,
 			expected: &Auth{
+				AuthType:     authTypeBasicAuth,
 				ClientSecret: "the-client-secret",
 				Roles:        []string{"role1"},
 			},
@@ -66,10 +88,12 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 		{
 			name: "missing client_secret",
 			caddyfile: `paw_auth {
+				basic_auth
 				client_id the-client-id
 				roles role1
 			}`,
 			expected: &Auth{
+				AuthType: authTypeBasicAuth,
 				ClientID: "the-client-id",
 				Roles:    []string{"role1"},
 			},
@@ -78,10 +102,12 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 		{
 			name: "missing roles",
 			caddyfile: `paw_auth {
+				basic_auth
 				client_id the-client-id
 				client_secret the-client-secret
 			}`,
 			expected: &Auth{
+				AuthType:     authTypeBasicAuth,
 				ClientID:     "the-client-id",
 				ClientSecret: "the-client-secret",
 			},
@@ -90,6 +116,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 		{
 			name: "empty roles",
 			caddyfile: `paw_auth {
+				basic_auth
 				client_id the-client-id
 				client_secret the-client-secret
 				roles
@@ -99,6 +126,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 		{
 			name: "unrecognized subdirective",
 			caddyfile: `paw_auth {
+				basic_auth
 				client_id the-client-id
 				client_secret the-client-secret
 				roles role1
@@ -109,6 +137,18 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 		{
 			name: "no arguments after paw_auth directive",
 			caddyfile: `paw_auth arg1 {
+				basic_auth
+				client_id the-client-id
+				client_secret the-client-secret
+				roles role1
+			}`,
+			expectError: true,
+		},
+		{
+			name: "auth type set multiple times",
+			caddyfile: `paw_auth {
+				basic_auth
+				server_cookies
 				client_id the-client-id
 				client_secret the-client-secret
 				roles role1
@@ -127,6 +167,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
+				assert.Equal(t, tt.expected.AuthType, p.AuthType)
 				assert.Equal(t, tt.expected.ClientID, p.ClientID)
 				assert.Equal(t, tt.expected.ClientSecret, p.ClientSecret)
 				assert.Equal(t, tt.expected.Roles, p.Roles)
@@ -146,6 +187,7 @@ func TestAuthValidate(t *testing.T) {
 		{
 			name: "valid configuration",
 			auth: Auth{
+				AuthType:     authTypeBasicAuth,
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
 				Roles:        []string{"admin", "user"},
@@ -153,8 +195,18 @@ func TestAuthValidate(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name: "missing auth_type",
+			auth: Auth{
+				ClientID:     "test-client-id",
+				ClientSecret: "test-client-secret",
+				Roles:        []string{"admin", "user"},
+			},
+			expectError: true,
+		},
+		{
 			name: "missing client_id",
 			auth: Auth{
+				AuthType:     authTypeBasicAuth,
 				ClientSecret: "test-client-secret",
 				Roles:        []string{"admin"},
 			},
@@ -163,6 +215,7 @@ func TestAuthValidate(t *testing.T) {
 		{
 			name: "missing client_secret",
 			auth: Auth{
+				AuthType: authTypeBasicAuth,
 				ClientID: "test-client-id",
 				Roles:    []string{"admin"},
 			},
@@ -171,6 +224,7 @@ func TestAuthValidate(t *testing.T) {
 		{
 			name: "missing roles",
 			auth: Auth{
+				AuthType:     authTypeBasicAuth,
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
 			},
@@ -179,6 +233,7 @@ func TestAuthValidate(t *testing.T) {
 		{
 			name: "empty roles slice",
 			auth: Auth{
+				AuthType:     authTypeBasicAuth,
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
 				Roles:        []string{},
