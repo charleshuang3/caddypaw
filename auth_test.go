@@ -284,3 +284,27 @@ example.com {
 
 	assert.NotNil(t, a.publicKey)
 }
+
+func TestAuthDirective(t *testing.T) {
+	caddyfileInput := `{
+	order paw_auth before basic_auth
+	authn_yaml_file internal/testdata/test.yaml
+}
+
+example.com {
+	paw_auth {
+		basic_auth
+		client_id the-client-id
+		client_secret the-client-secret
+		roles role1 role2
+	}
+	respond "hi"
+}
+`
+
+	cfg := caddyConfig(t, caddyfileInput)
+
+	// call ProvisionContext will provision and validate the config.
+	_, err := caddy.ProvisionContext(cfg)
+	assert.NoError(t, err)
+}
