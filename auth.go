@@ -23,11 +23,13 @@ var (
 
 func init() {
 	caddy.RegisterModule(AuthModule{})
-	httpcaddyfile.RegisterHandlerDirective("paw_auth", parseCaddyfile)
+	httpcaddyfile.RegisterHandlerDirective("paw_auth", parseDirectivePawAuth)
 }
 
-func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	return &AuthModule{}, nil
+func parseDirectivePawAuth(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	a := &AuthModule{}
+	err := a.UnmarshalCaddyfile(h.Dispenser)
+	return a, err
 }
 
 type authType uint8
