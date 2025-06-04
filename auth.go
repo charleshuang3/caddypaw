@@ -1,6 +1,7 @@
 package caddypaw
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/oauth2"
 
 	"github.com/charleshuang3/caddypaw/internal/config"
 )
@@ -68,7 +70,10 @@ type AuthModule struct {
 	authnConfig *config.AuthnConfig
 	publicKey   jwk.Key
 
+	oauth2Config *oauth2.Config
+
 	basicAuthCache *ristretto.Cache[string, *basicAuth]
+	stateCache     *ristretto.Cache[string, string]
 }
 
 // CaddyModule returns the Caddy module information.
@@ -91,7 +96,16 @@ func (a *AuthModule) Provision(ctx caddy.Context) error {
 		return err
 	}
 
-	a.logger = ctx.Logger(a)
+	a.stateCache, err = ristretto.NewCache(&ristretto.Config[string, string]{
+		NumCounters: 1e7,
+		MaxCost:     1e7,
+		BufferItems: 16,
+	})
+	if err != nil {
+		return err
+	}
+
+	a.logger = ctx.Logger(a).With(zap.String("client_id", a.ClientID))
 
 	appModule, err := ctx.App(globalOptionAppName)
 	if err != nil {
@@ -102,6 +116,17 @@ func (a *AuthModule) Provision(ctx caddy.Context) error {
 
 	a.authnConfig = gOption.AuthnConfig
 	a.publicKey = gOption.publicKey
+
+	a.oauth2Config = &oauth2.Config{
+		ClientID:     a.ClientID,
+		ClientSecret: a.ClientSecret,
+		Endpoint: oauth2.Endpoint{
+			TokenURL: a.authnConfig.TokenURL,
+			AuthURL:  a.authnConfig.AuthURL,
+		},
+		RedirectURL: a.CallbackURL,
+		Scopes:      []string{"openid", "profile", "email", "offline_access"},
+	}
 
 	return nil
 }
@@ -138,19 +163,30 @@ func (a *AuthModule) ServeHTTP(w http.ResponseWriter, r *http.Request, next cadd
 		// 302 redirect. checkAuth() already wrote status and location to body.
 		// The caller (ServeHTTP) just needs to know not to call the next handler.
 		return nil
+	case http.StatusBadRequest:
+		if c := a.logger.Check(zapcore.ErrorLevel, "bad request error"); c != nil {
+			c.Write(zap.Error(err), zap.String("url", r.RequestURI))
+		}
+		if err != nil && errors.Is(err, caddyhttp.HandlerError{}) {
+			return err
+		}
+		return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("bad request"))
 	case http.StatusUnauthorized:
 		// Have 401 error
+		if c := a.logger.Check(zapcore.ErrorLevel, "unauthorized error"); c != nil {
+			c.Write(zap.Error(err), zap.String("url", r.RequestURI))
+		}
 		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
 	case http.StatusInternalServerError:
 		// Have error, return 500 error to client
-		if c := a.logger.Check(zapcore.ErrorLevel, "auth provider returned error"); c != nil {
-			c.Write(zap.String("provider", a.AuthType.String()), zap.Error(err))
+		if c := a.logger.Check(zapcore.ErrorLevel, "internal error"); c != nil {
+			c.Write(zap.Error(err), zap.String("url", r.RequestURI))
 		}
 		return caddyhttp.Error(http.StatusInternalServerError, fmt.Errorf("internal error"))
 	default:
 		// Fallback for unexpected status codes
-		if c := a.logger.Check(zapcore.ErrorLevel, "checkAuth returned unexpected status"); c != nil {
-			c.Write(zap.String("provider", a.AuthType.String()), zap.Int("status", status))
+		if c := a.logger.Check(zapcore.ErrorLevel, "checkAuth() returned unexpected status"); c != nil {
+			c.Write(zap.Int("status", status), zap.Error(err), zap.String("url", r.RequestURI))
 		}
 		return caddyhttp.Error(http.StatusInternalServerError, fmt.Errorf("unexpected authentication status"))
 	}
@@ -161,7 +197,6 @@ type userInfo struct {
 	Name       string `json:"name"`
 	Email      string `json:"email"`
 	Roles      string `json:"roles"` // multi-roles splitted by " "
-	UserID     string `json:"user_id"`
 	Picture    string `json:"picture"`
 	Expiration int64  `json:"exp"`
 
@@ -188,10 +223,6 @@ func (a *AuthModule) checkAuth(w http.ResponseWriter, r *http.Request) (int, *us
 	default:
 		return http.StatusInternalServerError, nil, fmt.Errorf("unknown auth type: %d", a.AuthType)
 	}
-}
-
-func (a *AuthModule) checkServerCookies(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
-	return http.StatusInternalServerError, nil, fmt.Errorf("not implemented")
 }
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.

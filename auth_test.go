@@ -275,6 +275,7 @@ example.com {
 
 	assert.Equal(t,
 		&config.AuthnConfig{
+			Issuer:             "http://example.com:8443/oauth2",
 			AuthURL:            "http://example.com:8443/oauth2/authorize",
 			TokenURL:           "http://example.com:8443/oauth2/token",
 			NonOIDCUserInfoURL: "http://example.com:8443/user/info",
