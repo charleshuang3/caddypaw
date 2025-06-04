@@ -1,6 +1,10 @@
 package caddypaw
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type basicAuth struct {
 	password string
@@ -26,4 +30,22 @@ func (a *AuthModule) getBasicAuth(username string) (*basicAuth, bool) {
 		return nil, false
 	}
 	return o, true
+}
+
+const (
+	defaultTTL = 10 * time.Minute
+)
+
+func (a *AuthModule) storeURLAndGenState(url string) string {
+	state := uuid.NewString()
+	a.stateCache.SetWithTTL(state, url, 1, defaultTTL)
+	return state
+}
+
+func (a *AuthModule) getState(state string) (string, bool) {
+	url, ok := a.stateCache.Get(state)
+	if !ok {
+		return "", false
+	}
+	return url, true
 }
