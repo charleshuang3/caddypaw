@@ -10,6 +10,7 @@ import (
 )
 
 type AuthnConfig struct {
+	Issuer             string `yaml:"issuer" json:"issuer"`
 	AuthURL            string `yaml:"auth_url" json:"auth_url"`
 	TokenURL           string `yaml:"token_url" json:"token_url"`
 	NonOIDCUserInfoURL string `yaml:"non_oidc_userinfo_url" json:"non_oidc_userinfo_url"`
@@ -28,6 +29,10 @@ func LoadFromFile(path string) (*AuthnConfig, error) {
 	err = yaml.Unmarshal(data, res)
 	if err != nil {
 		return nil, err
+	}
+
+	if res.Issuer == "" {
+		return nil, errors.New("Issuer cannot be empty")
 	}
 
 	if res.AuthURL == "" {

@@ -1,3 +1,4 @@
+issuer: http://example.com:8443/oauth2
 auth_url: http://example.com:8443/oauth2/authorize
 token_url: http://example.com:8443/oauth2/token
 non_oidc_userinfo_url: http://example.com:8443/user/info
