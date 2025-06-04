@@ -125,24 +125,35 @@ func (a *AuthModule) Validate() error {
 
 // ServeHTTP implements the caddyhttp.MiddlewareHandler interface.
 func (a *AuthModule) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	ok, user, err := a.checkAuth(w, r)
-	if err != nil {
+	status, user, err := a.checkAuth(w, r)
+
+	switch status {
+	case http.StatusOK:
+		// Have userinfo, can go to next checker
+		if ok := user.checkRole(a.Roles); !ok {
+			return caddyhttp.Error(http.StatusForbidden, fmt.Errorf("forbidden"))
+		}
+		return next.ServeHTTP(w, r)
+	case http.StatusFound:
+		// 302 redirect. checkAuth() already wrote status and location to body.
+		// The caller (ServeHTTP) just needs to know not to call the next handler.
+		return nil
+	case http.StatusUnauthorized:
+		// Have 401 error
+		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
+	case http.StatusInternalServerError:
+		// Have error, return 500 error to client
 		if c := a.logger.Check(zapcore.ErrorLevel, "auth provider returned error"); c != nil {
 			c.Write(zap.String("provider", a.AuthType.String()), zap.Error(err))
 		}
 		return caddyhttp.Error(http.StatusInternalServerError, fmt.Errorf("internal error"))
+	default:
+		// Fallback for unexpected status codes
+		if c := a.logger.Check(zapcore.ErrorLevel, "checkAuth returned unexpected status"); c != nil {
+			c.Write(zap.String("provider", a.AuthType.String()), zap.Int("status", status))
+		}
+		return caddyhttp.Error(http.StatusInternalServerError, fmt.Errorf("unexpected authentication status"))
 	}
-	if !ok {
-		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
-	}
-
-	if ok := user.checkRole(a.Roles); !ok {
-		return caddyhttp.Error(http.StatusForbidden, fmt.Errorf("forbidden"))
-	}
-
-	err = next.ServeHTTP(w, r) // Call the next handler in the chain
-
-	return err
 }
 
 type userInfo struct {
@@ -166,21 +177,21 @@ func (u *userInfo) checkRole(allowRoles []string) bool {
 	return false
 }
 
-// checkAuth of request, return can continue to next handler and error.
-func (a *AuthModule) checkAuth(w http.ResponseWriter, r *http.Request) (bool, *userInfo, error) {
+// checkAuth of request, return http status code, user info and error.
+// If status is http.StatusFound (302), the response is already written by this function or its sub-functions.
+func (a *AuthModule) checkAuth(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
 	switch a.AuthType {
 	case authTypeBasicAuth:
 		return a.checkBasicAuth(w, r)
 	case authTypeServerCookies:
 		return a.checkServerCookies(w, r)
 	default:
-		return false, nil, fmt.Errorf("unknown auth type: %d", a.AuthType)
+		return http.StatusInternalServerError, nil, fmt.Errorf("unknown auth type: %d", a.AuthType)
 	}
 }
 
-func (a *AuthModule) checkServerCookies(w http.ResponseWriter, r *http.Request) (bool, *userInfo, error) {
-	// TODO
-	return false, nil, nil
+func (a *AuthModule) checkServerCookies(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
+	return http.StatusInternalServerError, nil, fmt.Errorf("not implemented")
 }
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.

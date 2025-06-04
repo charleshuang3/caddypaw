@@ -101,9 +101,9 @@ func TestCheckBasicAuth(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.SetBasicAuth("test-user", "test-password")
 
-	ok, user, err := a.checkBasicAuth(w, r)
+	status, user, err := a.checkBasicAuth(w, r)
 	require.NoError(t, err)
-	assert.True(t, ok)
+	assert.Equal(t, http.StatusOK, status)
 	assert.Equal(t, want.Username, user.Username)
 	assert.Equal(t, want.Roles, user.Roles)
 	assert.Equal(t, stringset.New("admin", "webdav"), user.roles)
@@ -111,8 +111,8 @@ func TestCheckBasicAuth(t *testing.T) {
 	assert.Len(t, mock.basicAuthRequests, 1)
 
 	a.basicAuthCache.Wait()
-	o, ok := a.getBasicAuth("test-user")
-	require.True(t, ok)
+	o, cacheOk := a.getBasicAuth("test-user")
+	require.True(t, cacheOk)
 	assert.Equal(t, "test-password", o.password)
 	assert.Equal(t, user, o.user)
 }
@@ -131,16 +131,16 @@ func TestCheckBasicAuth_NoBasicAuthHeader(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 
-	ok, user, err := a.checkBasicAuth(w, r)
+	status, user, err := a.checkBasicAuth(w, r)
 	assert.NoError(t, err)
-	assert.False(t, ok)
+	assert.Equal(t, http.StatusUnauthorized, status)
 	assert.Nil(t, user)
 	assert.NotEmpty(t, w.Header().Get("WWW-Authenticate"))
 
 	assert.Len(t, mock.basicAuthRequests, 0)
 	a.basicAuthCache.Wait()
-	_, ok = a.getBasicAuth("test-user")
-	assert.False(t, ok)
+	_, cacheOk := a.getBasicAuth("test-user")
+	assert.False(t, cacheOk)
 }
 
 func TestCheckBasicAuth_AuthnServerResponseError(t *testing.T) {
@@ -149,17 +149,20 @@ func TestCheckBasicAuth_AuthnServerResponseError(t *testing.T) {
 		responseCode int
 		wantErr      bool
 		wantHeader   string
+		wantStatus   int // New field for expected status
 	}{
 		{
 			name:         "authn server response 401",
 			responseCode: http.StatusUnauthorized,
 			wantErr:      false,
 			wantHeader:   "WWW-Authenticate",
+			wantStatus:   http.StatusUnauthorized,
 		},
 		{
 			name:         "authn server response 500",
 			responseCode: http.StatusInternalServerError,
 			wantErr:      true,
+			wantStatus:   http.StatusInternalServerError,
 		},
 	}
 
@@ -173,8 +176,8 @@ func TestCheckBasicAuth_AuthnServerResponseError(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, "/", nil)
 		r.SetBasicAuth("test-user", "test-password")
 
-		ok, user, err := a.checkBasicAuth(w, r)
-		assert.False(t, ok)
+		status, user, err := a.checkBasicAuth(w, r)
+		assert.Equal(t, tt.wantStatus, status) // Assert on the returned status
 		assert.Nil(t, user)
 		if tt.wantErr {
 			assert.NotNil(t, err)
@@ -188,8 +191,8 @@ func TestCheckBasicAuth_AuthnServerResponseError(t *testing.T) {
 
 		assert.Len(t, mock.basicAuthRequests, 1)
 		a.basicAuthCache.Wait()
-		_, ok = a.getBasicAuth("test-user")
-		assert.False(t, ok)
+		_, cacheOk := a.getBasicAuth("test-user")
+		assert.False(t, cacheOk)
 	}
 }
 
@@ -197,15 +200,15 @@ func TestCheckBasicAuth_Cache(t *testing.T) {
 	expiration := time.Now().Add(time.Hour).Unix()
 
 	tests := []struct {
-		name     string
-		password string
-		wantNext bool
-		wantUser *userInfo
+		name       string
+		password   string
+		wantStatus int // Changed from wantNext to wantStatus
+		wantUser   *userInfo
 	}{
 		{
-			name:     "password match",
-			password: "test-password",
-			wantNext: true,
+			name:       "password match",
+			password:   "test-password",
+			wantStatus: http.StatusOK,
 			wantUser: &userInfo{
 				Username:   "test-user",
 				Roles:      "admin webdav",
@@ -214,10 +217,10 @@ func TestCheckBasicAuth_Cache(t *testing.T) {
 			},
 		},
 		{
-			name:     "password does not match",
-			password: "wrong-password",
-			wantNext: false,
-			wantUser: nil,
+			name:       "password does not match",
+			password:   "wrong-password",
+			wantStatus: http.StatusUnauthorized,
+			wantUser:   nil,
 		},
 	}
 
@@ -240,9 +243,9 @@ func TestCheckBasicAuth_Cache(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, "/", nil)
 			r.SetBasicAuth("test-user", tt.password)
 
-			ok, user, err := a.checkBasicAuth(w, r)
+			status, user, err := a.checkBasicAuth(w, r)
 			require.NoError(t, err)
-			assert.Equal(t, tt.wantNext, ok)
+			assert.Equal(t, tt.wantStatus, status)
 			assert.Equal(t, tt.wantUser, user)
 			assert.Len(t, mock.basicAuthRequests, 0)
 		})
