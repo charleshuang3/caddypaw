@@ -29,3 +29,12 @@ func urlMatcherFromStr(s string) (*urlMatcher, error) {
 		Pattern:     ss[1],
 	}, nil
 }
+
+func (u *urlMatcher) Match(path string) bool {
+	switch u.MatcherType {
+	case matcherTypePathPrefix:
+		return strings.HasPrefix(path, u.Pattern)
+	default:
+		return false
+	}
+}

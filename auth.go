@@ -158,6 +158,13 @@ func (a *AuthModule) configValidate() error {
 
 // ServeHTTP implements the caddyhttp.MiddlewareHandler interface.
 func (a *AuthModule) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	path := r.URL.Path
+	for _, u := range a.PublicURLs {
+		if u.Match(path) {
+			return next.ServeHTTP(w, r)
+		}
+	}
+
 	status, user, err := a.checkAuth(w, r)
 
 	switch status {

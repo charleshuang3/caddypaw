@@ -1,6 +1,8 @@
 package caddypaw
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -326,4 +328,47 @@ example.com {
 	// call ProvisionContext will provision and validate the config.
 	_, err := caddy.ProvisionContext(cfg)
 	assert.NoError(t, err)
+}
+
+func TestServeHTTP_PublicURLs(t *testing.T) {
+	tt := []struct {
+		name     string
+		authType authType
+	}{
+		{
+			name:     "basic_auth",
+			authType: authTypeBasicAuth,
+		},
+		{
+			name:     "server_cookies",
+			authType: authTypeServerCookies,
+		},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			mock, testServer := setupMockAuthnServer(t)
+			a := newAuthModule(t, testServer, tc.authType)
+
+			var err error
+			u, err := urlMatcherFromStr("path_prefix:/public")
+			require.NoError(t, err)
+			a.PublicURLs = append(a.PublicURLs, u)
+
+			mock.responseCode = http.StatusUnauthorized
+
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest(http.MethodGet, "/public", nil)
+
+			// Mock the next handler in the chain
+			nextHandler := &mockCaddyHTTPHandler{handler: func(w http.ResponseWriter, r *http.Request) error {
+				w.WriteHeader(http.StatusOK)
+				return nil
+			}}
+
+			err = a.ServeHTTP(w, r, nextHandler)
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusOK, w.Code)
+		})
+	}
 }
