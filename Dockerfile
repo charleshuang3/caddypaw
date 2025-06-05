@@ -35,7 +35,7 @@ ENV XDG_CONFIG_HOME /config
 ENV XDG_DATA_HOME /data
 
 # Expose HTTP and HTTPS ports
-EXPOSE 80 443
+EXPOSE 80 443 443/udp
 
 # Set the entrypoint to run Caddy
 ENTRYPOINT ["caddy", "run", "--config", "/config/Caddyfile"]
