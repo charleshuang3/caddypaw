@@ -49,3 +49,12 @@ func (a *AuthModule) getState(state string) (string, bool) {
 	}
 	return url, true
 }
+
+func (a *AuthModule) getAndDelState(state string) (string, bool) {
+	url, ok := a.stateCache.Get(state)
+	if !ok {
+		return "", false
+	}
+	a.stateCache.Del(state)
+	return url, true
+}

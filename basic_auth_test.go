@@ -8,36 +8,9 @@ import (
 
 	"bitbucket.org/creachadair/stringset"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/dgraph-io/ristretto/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
-
-	"github.com/charleshuang3/caddypaw/internal/config"
 )
-
-func newAuthModule(t *testing.T, testServer *httptest.Server, ty authType) *AuthModule {
-	cache, err := ristretto.NewCache(&ristretto.Config[string, *basicAuth]{
-		NumCounters: 1e7,
-		MaxCost:     1e7,
-		BufferItems: 16,
-	})
-	require.NoError(t, err)
-
-	a := &AuthModule{
-		AuthType:     ty,
-		ClientID:     "test-client-id",
-		ClientSecret: "test-client-secret",
-		Roles:        []string{"admin", "user"},
-		authnConfig: &config.AuthnConfig{
-			NonOIDCUserInfoURL: testServer.URL + "/user/info",
-		},
-		basicAuthCache: cache,
-		logger:         zap.L(),
-	}
-
-	return a
-}
 
 func TestCheckBasicAuth(t *testing.T) {
 	mock, testServer := setupMockAuthnServer(t)

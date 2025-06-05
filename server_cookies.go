@@ -63,10 +63,16 @@ func (a *AuthModule) redirectToAuthorize(w http.ResponseWriter, r *http.Request)
 func (a *AuthModule) handleDefaultCallback(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
 	q := r.URL.Query()
 	code := q.Get("code")
+	if code == "" {
+		return http.StatusBadRequest, nil, caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("no code"))
+	}
 	state := q.Get("state")
+	if state == "" {
+		return http.StatusBadRequest, nil, caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("no state"))
+	}
 
 	// state must be known
-	redirect, ok := a.getState(state)
+	redirect, ok := a.getAndDelState(state)
 	if !ok {
 		return http.StatusBadRequest, nil, caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("invalid state"))
 	}
