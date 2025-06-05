@@ -178,7 +178,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 	}
 }
 
-func TestAuthValidate(t *testing.T) {
+func TestAuthConfigValidate(t *testing.T) {
 	tests := []struct {
 		name        string
 		auth        AuthModule
@@ -191,6 +191,7 @@ func TestAuthValidate(t *testing.T) {
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
 				Roles:        []string{"admin", "user"},
+				CallbackURL:  "https://example.com/callback",
 			},
 			expectError: false,
 		},
@@ -240,11 +241,21 @@ func TestAuthValidate(t *testing.T) {
 			},
 			expectError: true,
 		},
+		{
+			name: "missing callback_url",
+			auth: AuthModule{
+				AuthType:     authTypeBasicAuth,
+				ClientID:     "test-client-id",
+				ClientSecret: "test-client-secret",
+				Roles:        []string{"admin"},
+			},
+			expectError: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.auth.Validate()
+			err := tt.auth.configValidate()
 			if tt.expectError {
 				require.Error(t, err)
 			} else {
@@ -268,7 +279,13 @@ example.com {
 	ctx, err := caddy.ProvisionContext(cfg)
 	require.NoError(t, err)
 
-	a := &AuthModule{}
+	a := &AuthModule{
+		AuthType:     authTypeBasicAuth,
+		ClientID:     "test-client-id",
+		ClientSecret: "test-client-secret",
+		Roles:        []string{"admin"},
+		CallbackURL:  "https://example.com/callback",
+	}
 
 	err = a.Provision(ctx)
 	require.NoError(t, err)
@@ -298,6 +315,7 @@ example.com {
 		client_id the-client-id
 		client_secret the-client-secret
 		roles role1 role2
+		callback_url https://example.com/callback
 	}
 	respond "hi"
 }

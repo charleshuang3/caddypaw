@@ -86,6 +86,10 @@ func (AuthModule) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the module.
 func (a *AuthModule) Provision(ctx caddy.Context) error {
+	if err := a.configValidate(); err != nil {
+		return err
+	}
+
 	var err error
 	a.basicAuthCache, err = ristretto.NewCache(&ristretto.Config[string, *basicAuth]{
 		NumCounters: 1e7,
@@ -131,8 +135,8 @@ func (a *AuthModule) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// Validate ensures the module's configuration is valid.
-func (a *AuthModule) Validate() error {
+// configValidate ensures the module's configuration is valid.
+func (a *AuthModule) configValidate() error {
 	if a.AuthType == authTypeNone {
 		return fmt.Errorf("auth_type is required, allow value basic_auth or server_cookies")
 	}
@@ -145,6 +149,10 @@ func (a *AuthModule) Validate() error {
 	if len(a.Roles) == 0 {
 		return fmt.Errorf("roles are required")
 	}
+	if a.CallbackURL == "" {
+		return fmt.Errorf("callback_url is required")
+	}
+
 	return nil
 }
 
@@ -233,7 +241,7 @@ func (a *AuthModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	//   client_id the-client-id
 	//   client_secret the-client-secret
 	//   roles role1 role2
-	//   callback_url callback-url # optional
+	//   callback_url callback-url
 	//   public_urls path_prefix:/path path_prefix:/path #optional
 	// }
 	d.Next() // Consume directive name ("paw_auth")
@@ -299,7 +307,6 @@ func (a *AuthModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 var (
 	// Interface guards
 	_ caddy.Provisioner           = (*AuthModule)(nil)
-	_ caddy.Validator             = (*AuthModule)(nil)
 	_ caddyhttp.MiddlewareHandler = (*AuthModule)(nil)
 	_ caddyfile.Unmarshaler       = (*AuthModule)(nil)
 )
