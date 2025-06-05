@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,42 +14,14 @@ import (
 	"github.com/charleshuang3/caddypaw/internal/testdata"
 )
 
-func genAccessToken(t *testing.T, iss string, exp time.Time, clientID string, user *userInfo) string {
-	t.Helper()
-
-	b := jwt.NewBuilder()
-	if iss != "" {
-		b.Issuer(iss)
+func validUser() *userInfo {
+	return &userInfo{
+		Username: "testuser",
+		Name:     "Test User",
+		Roles:    "admin user",
+		Email:    "test@example.com",
+		Picture:  "http://example.com/pic.jpg",
 	}
-	b.IssuedAt(time.Now())
-	b.Expiration(exp)
-	if clientID != "" {
-		b.Audience([]string{clientID})
-	}
-	if user.Username != "" {
-		b.Subject(user.Username)
-	}
-	if user.Name != "" {
-		b.Claim("name", user.Name)
-	}
-	if user.Roles != "" {
-		b.Claim("roles", user.Roles)
-	}
-	if user.Email != "" {
-		b.Claim("email", user.Email)
-	}
-	if user.Picture != "" {
-		b.Claim("picture", user.Picture)
-	}
-	b.Claim("scope", "openid profile email")
-
-	token, err := b.Build()
-	require.NoError(t, err)
-
-	signed, err := jwt.Sign(token, jwt.WithKey(jwa.RS256(), testdata.PrivateKey))
-	require.NoError(t, err)
-
-	return string(signed)
 }
 
 func TestAuthModule_validateJWT_Success(t *testing.T) {
@@ -63,24 +34,18 @@ func TestAuthModule_validateJWT_Success(t *testing.T) {
 		logger: zap.NewNop(), // Use a no-op logger for tests
 	}
 
-	validUser := &userInfo{
-		Username: "testuser",
-		Name:     "Test User",
-		Roles:    "admin user",
-		Email:    "test@example.com",
-		Picture:  "http://example.com/pic.jpg",
-	}
+	u := validUser()
 
-	token := genAccessToken(t, "test-issuer", time.Now().Add(time.Minute), "test-client", validUser)
+	token := genAccessToken(t, "test-issuer", time.Now().Add(time.Minute), "test-client", u)
 	u, err := authModule.validateJWT(token)
 
 	require.NoError(t, err)
 	require.NotNil(t, u)
-	assert.Equal(t, validUser.Username, u.Username)
-	assert.Equal(t, validUser.Name, u.Name)
-	assert.Equal(t, validUser.Roles, u.Roles)
-	assert.Equal(t, validUser.Email, u.Email)
-	assert.Equal(t, validUser.Picture, u.Picture)
+	assert.Equal(t, u.Username, u.Username)
+	assert.Equal(t, u.Name, u.Name)
+	assert.Equal(t, u.Roles, u.Roles)
+	assert.Equal(t, u.Email, u.Email)
+	assert.Equal(t, u.Picture, u.Picture)
 	assert.True(t, u.roles.Contains("admin"))
 	assert.True(t, u.roles.Contains("user"))
 }
@@ -93,16 +58,6 @@ func TestAuthModule_validateJWT_Error(t *testing.T) {
 			Issuer: "test-issuer",
 		},
 		logger: zap.NewNop(), // Use a no-op logger for tests
-	}
-
-	validUser := func() *userInfo {
-		return &userInfo{
-			Username: "testuser",
-			Name:     "Test User",
-			Roles:    "admin user",
-			Email:    "test@example.com",
-			Picture:  "http://example.com/pic.jpg",
-		}
 	}
 
 	type testCase struct {
