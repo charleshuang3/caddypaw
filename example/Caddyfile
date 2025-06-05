@@ -1,0 +1,34 @@
+{
+	authn_yaml_file /path/to/authn.config.yaml
+	order paw_auth before basic_auth
+}
+
+auth.example.com:8443 {
+	reverse_proxy 127.0.0.1:8081
+}
+
+app1.example.com:8443 {
+	paw_auth {
+		basic_auth
+		client_id client_id
+		client_secret client_secret
+		roles admin
+	}
+
+	handle / {
+		respond "Hi, This is app1" 200
+	}
+}
+
+app2.example.com:8443 {
+	paw_auth {
+		server_cookies
+		client_id client_id
+		client_secret client_secret
+		callback_url https://app2.example.com/paw/callback
+		roles admin
+	}
+
+	respond "Hi, This is app2" 200
+}
+

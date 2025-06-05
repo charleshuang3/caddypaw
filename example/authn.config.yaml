@@ -1,0 +1,10 @@
+issuer: https://auth.example.com/oauth2
+auth_url: https://auth.example.com/oauth2/authorize
+token_url: https://auth.example.com/oauth2/token
+non_oidc_userinfo_url: https://auth.example.com/user/info
+firewall_url: http://firewall_ip:8082/
+
+public_key_pem: |
+  -----BEGIN PUBLIC KEY-----
+  MIIBI...
+  -----END PUBLIC KEY-----

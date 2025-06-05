@@ -20,3 +20,7 @@ xcaddy build --with github.com/charleshuang3/caddypaw
 ```
 
 This will produce a new Caddy binary that includes the CaddyPAW plugin.
+
+## Configuration
+
+For configuration examples, please refer to the `example/` directory.
