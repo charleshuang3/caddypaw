@@ -346,3 +346,193 @@ func TestCheckServerCookies_handleDefaultCallback_Error(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckServerCookies_refreshToken(t *testing.T) {
+	mockServer, testServer := setupMockAuthnServer(t)
+	a := newAuthModule(t, testServer, authTypeServerCookies)
+
+	// 1. Generate an expired access token and a valid refresh token.
+	expiredAccessToken := genAccessToken(t, a.authnConfig.Issuer, time.Now().Add(-time.Hour), a.ClientID, validUser())
+	refreshToken := "old-refresh-token"
+
+	// 2. Create an httptest.NewRequest with these cookies.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{
+		Name:  cookieKeyAccessToken,
+		Value: expiredAccessToken,
+	})
+	req.AddCookie(&http.Cookie{
+		Name:  cookieKeyRefreshToken,
+		Value: refreshToken,
+	})
+
+	// 3. Set the mock server to return a new valid token when Exchange is called.
+	// This simulates the token refresh flow.
+	mockServer.user = validUser()
+	mockServer.responseCode = http.StatusOK
+
+	w := httptest.NewRecorder()
+
+	// 4. Call a.checkServerCookies (which will internally call refreshToken because of the expired access token).
+	code, user, err := a.checkServerCookies(w, req)
+
+	// 5. Assert that the response code is http.StatusOK and a valid user is returned.
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, code)
+	require.NotNil(t, user)
+	assert.Equal(t, validUser().Username, user.Username)
+
+	// 6. Assert that new access and refresh tokens are set in the response cookies.
+	cookies := w.Result().Cookies()
+	m := make(map[string]string)
+	for _, c := range cookies {
+		m[c.Name] = c.Value
+	}
+
+	assert.NotEmpty(t, m[cookieKeyAccessToken])
+	assert.NotEmpty(t, m[cookieKeyRefreshToken])
+	assert.NotEqual(t, expiredAccessToken, m[cookieKeyAccessToken])
+	assert.NotEqual(t, "old-refresh-token", m[cookieKeyRefreshToken])
+}
+
+func TestCheckServerCookies_refreshToken_redirectToAuthorize(t *testing.T) {
+	_, testServer := setupMockAuthnServer(t)
+	a := newAuthModule(t, testServer, authTypeServerCookies)
+
+	// 1. Generate an expired access token.
+	expiredAccessToken := genAccessToken(t, a.authnConfig.Issuer, time.Now().Add(-time.Hour), a.ClientID, validUser())
+
+	// 2. Create an httptest.NewRequest with the expired access token and no refresh token.
+	req := httptest.NewRequest(http.MethodGet, "/some/path", nil)
+	req.AddCookie(&http.Cookie{
+		Name:  cookieKeyAccessToken,
+		Value: expiredAccessToken,
+	})
+	// No refresh token cookie added
+
+	w := httptest.NewRecorder()
+
+	// 3. Call a.checkServerCookies.
+	code, user, err := a.checkServerCookies(w, req)
+
+	// 4. Assert that the response code is http.StatusFound and no user is returned.
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusFound, code)
+	assert.Nil(t, user)
+
+	// 5. Assert that the response redirects to the authorize URL.
+	assert.Equal(t, http.StatusFound, w.Code)
+	location := w.Header().Get("Location")
+	require.NotEmpty(t, location)
+	assert.Equal(t, a.authnConfig.AuthURL, strings.Split(location, "?")[0])
+
+	urlLocation, err := url.Parse(location)
+	require.NoError(t, err)
+
+	q := urlLocation.Query()
+	assert.Equal(t, a.oauth2Config.RedirectURL, q.Get("redirect_uri"))
+	assert.Equal(t, a.ClientID, q.Get("client_id"))
+
+	state := q.Get("state")
+	assert.NotEmpty(t, state)
+
+	a.stateCache.Wait()
+	storedURL, ok := a.getState(state)
+	require.True(t, ok)
+	assert.Equal(t, "/some/path", storedURL)
+}
+
+func TestCheckServerCookies_refreshToken_Error(t *testing.T) {
+	mockServer, testServer := setupMockAuthnServer(t)
+	a := newAuthModule(t, testServer, authTypeServerCookies)
+
+	// 1. Generate an expired access token and a valid refresh token.
+	expiredAccessToken := genAccessToken(t, a.authnConfig.Issuer, time.Now().Add(-time.Hour), a.ClientID, validUser())
+	refreshToken := "invalid-refresh-token" // This token will cause the mock server to return 401
+
+	// 2. Create an httptest.NewRequest with these cookies.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{
+		Name:  cookieKeyAccessToken,
+		Value: expiredAccessToken,
+	})
+	req.AddCookie(&http.Cookie{
+		Name:  cookieKeyRefreshToken,
+		Value: refreshToken,
+	})
+
+	// 3. Set the mock server to return a 401 when Exchange is called (simulating invalid refresh token).
+	mockServer.responseCode = http.StatusUnauthorized
+
+	w := httptest.NewRecorder()
+
+	// 4. Call a.checkServerCookies.
+	code, user, err := a.checkServerCookies(w, req)
+
+	// 5. Assert that the response code is http.StatusUnauthorized and an error is returned.
+	assert.Equal(t, http.StatusUnauthorized, code)
+	assert.Nil(t, user)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "oauth2: cannot fetch token: 401 Unauthorized")
+}
+
+func TestCheckServerCookies_withAccessToken(t *testing.T) {
+	_, testServer := setupMockAuthnServer(t)
+	a := newAuthModule(t, testServer, authTypeServerCookies)
+
+	type testCase struct {
+		name         string
+		accessToken  string
+		expectedCode int
+		expectedUser *userInfo
+		assertErr    func(t *testing.T, err error)
+	}
+
+	validTok := genAccessToken(t, a.authnConfig.Issuer, time.Now().Add(time.Minute), a.ClientID, validUser())
+	invalidTok := genAccessToken(t, a.authnConfig.Issuer, time.Now().Add(time.Minute), a.ClientID, validUser()) + "invalid-signature"
+
+	tests := []testCase{
+		{
+			name:         "Valid Access Token",
+			accessToken:  validTok,
+			expectedCode: http.StatusOK,
+			expectedUser: validUser(),
+			assertErr: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		{
+			name:         "Invalid Access Token (Signature)",
+			accessToken:  invalidTok,
+			expectedCode: http.StatusUnauthorized,
+			expectedUser: nil,
+			assertErr: func(t *testing.T, err error) {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "verification error")
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.AddCookie(&http.Cookie{
+				Name:  cookieKeyAccessToken,
+				Value: tc.accessToken,
+			})
+
+			code, user, err := a.checkServerCookies(w, req)
+
+			assert.Equal(t, tc.expectedCode, code)
+			if tc.expectedUser != nil {
+				require.NotNil(t, user)
+				assert.Equal(t, tc.expectedUser.Username, user.Username)
+			} else {
+				assert.Nil(t, user)
+			}
+			tc.assertErr(t, err)
+		})
+	}
+}
