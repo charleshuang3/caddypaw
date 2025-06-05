@@ -40,7 +40,7 @@ func (a *AuthModule) checkServerCookies(w http.ResponseWriter, r *http.Request) 
 		if errors.Is(err, jwt.TokenExpiredError()) {
 			return a.refreshToken(w, r)
 		}
-		// should log the err
+		a.logErr(r, fmt.Sprintf("invalid token on path: %s", path))
 		return http.StatusUnauthorized, nil, err
 	}
 
@@ -64,16 +64,19 @@ func (a *AuthModule) handleDefaultCallback(w http.ResponseWriter, r *http.Reques
 	q := r.URL.Query()
 	code := q.Get("code")
 	if code == "" {
+		a.logErr(r, "callback: no auth code")
 		return http.StatusBadRequest, nil, caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("no code"))
 	}
 	state := q.Get("state")
 	if state == "" {
+		a.logErr(r, "callback: no state")
 		return http.StatusBadRequest, nil, caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("no state"))
 	}
 
 	// state must be known
 	redirect, ok := a.getAndDelState(state)
 	if !ok {
+		a.logErr(r, "callback: invalid state")
 		return http.StatusBadRequest, nil, caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("invalid state"))
 	}
 
@@ -169,7 +172,6 @@ func (a *AuthModule) refreshToken(w http.ResponseWriter, r *http.Request) (int, 
 
 	u, err := a.validateJWT(rawIDToken)
 	if err != nil {
-		// should log the err
 		return http.StatusUnauthorized, nil, err
 	}
 

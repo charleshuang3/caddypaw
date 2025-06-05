@@ -246,7 +246,7 @@ func TestAuthConfigValidate(t *testing.T) {
 		{
 			name: "missing callback_url",
 			auth: AuthModule{
-				AuthType:     authTypeBasicAuth,
+				AuthType:     authTypeServerCookies,
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
 				Roles:        []string{"admin"},
