@@ -1,6 +1,7 @@
 package caddypaw
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -71,7 +72,8 @@ func (a *AuthModule) handleDefaultCallback(w http.ResponseWriter, r *http.Reques
 	}
 
 	// exchange code
-	tokens, err := a.oauth2Config.Exchange(r.Context(), code)
+	ctx := context.WithValue(r.Context(), oauth2.HTTPClient, httpClient)
+	tokens, err := a.oauth2Config.Exchange(ctx, code)
 	if err != nil {
 		return http.StatusUnauthorized, nil, err
 	}
@@ -143,7 +145,8 @@ func (a *AuthModule) refreshToken(w http.ResponseWriter, r *http.Request) (int, 
 		return a.redirectToAuthorize(w, r)
 	}
 
-	ts := a.oauth2Config.TokenSource(r.Context(), &oauth2.Token{
+	ctx := context.WithValue(r.Context(), oauth2.HTTPClient, httpClient)
+	ts := a.oauth2Config.TokenSource(ctx, &oauth2.Token{
 		RefreshToken: refreshToken.Value,
 	})
 
