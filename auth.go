@@ -149,7 +149,7 @@ func (a *AuthModule) configValidate() error {
 	if len(a.Roles) == 0 {
 		return fmt.Errorf("roles are required")
 	}
-	if a.CallbackURL == "" {
+	if a.AuthType != authTypeBasicAuth && a.CallbackURL == "" {
 		return fmt.Errorf("callback_url is required")
 	}
 
