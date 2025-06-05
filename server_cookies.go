@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"bitbucket.org/creachadair/stringset"
@@ -102,6 +103,14 @@ func (a *AuthModule) validateJWT(tok string) (*userInfo, error) {
 	userInfo := &userInfo{}
 
 	userInfo.Expiration = exp.Unix()
+
+	if aud, ok := parsed.Audience(); ok && len(aud) > 0 {
+		if !slices.Contains(aud, a.ClientID) {
+			return nil, fmt.Errorf("invalid audience")
+		}
+	} else {
+		return nil, fmt.Errorf("no audience in token")
+	}
 
 	if sub, ok := parsed.Subject(); ok {
 		userInfo.Username = sub
