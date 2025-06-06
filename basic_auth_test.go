@@ -209,14 +209,14 @@ func TestServeHTTP_BasicAuth(t *testing.T) {
 func TestServeHTTP_BasicAuth_Error(t *testing.T) {
 	tests := []struct {
 		name            string
-		setupAuthModule func(*testing.T, *httptest.Server) *AuthModule
+		setupAuthModule func(*testing.T, *httptest.Server) *authModule
 		setupRequest    func(*http.Request)
 		mockResponse    func(*mockAuthnServer)
 		wantStatusCode  int
 	}{
 		{
 			name: "checkBasicAuth returns promptForCredentials (no basic auth header)",
-			setupAuthModule: func(t *testing.T, ts *httptest.Server) *AuthModule {
+			setupAuthModule: func(t *testing.T, ts *httptest.Server) *authModule {
 				a := newAuthModule(t, ts, authTypeBasicAuth)
 				a.Roles = []string{"admin"}
 				return a
@@ -231,7 +231,7 @@ func TestServeHTTP_BasicAuth_Error(t *testing.T) {
 		},
 		{
 			name: "checkBasicAuth returns promptForCredentials (wrong password)",
-			setupAuthModule: func(t *testing.T, ts *httptest.Server) *AuthModule {
+			setupAuthModule: func(t *testing.T, ts *httptest.Server) *authModule {
 				a := newAuthModule(t, ts, authTypeBasicAuth)
 				a.Roles = []string{"admin"}
 				return a
@@ -246,7 +246,7 @@ func TestServeHTTP_BasicAuth_Error(t *testing.T) {
 		},
 		{
 			name: "checkBasicAuth returns error (authn server internal error)",
-			setupAuthModule: func(t *testing.T, ts *httptest.Server) *AuthModule {
+			setupAuthModule: func(t *testing.T, ts *httptest.Server) *authModule {
 				a := newAuthModule(t, ts, authTypeBasicAuth)
 				a.Roles = []string{"admin"}
 				return a
@@ -261,7 +261,7 @@ func TestServeHTTP_BasicAuth_Error(t *testing.T) {
 		},
 		{
 			name: "checkBasicAuth returns user, but role does not match",
-			setupAuthModule: func(t *testing.T, ts *httptest.Server) *AuthModule {
+			setupAuthModule: func(t *testing.T, ts *httptest.Server) *authModule {
 				a := newAuthModule(t, ts, authTypeBasicAuth)
 				a.Roles = []string{"admin"} // Required role is admin
 				return a

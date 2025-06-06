@@ -14,7 +14,7 @@ func promptForCredentials(w http.ResponseWriter) {
 	w.Header().Set("WWW-Authenticate", `Basic realm="restricted"`)
 }
 
-func (a *AuthModule) checkBasicAuth(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
+func (a *authModule) checkBasicAuth(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
 	username, password, ok := r.BasicAuth()
 	if !ok {
 		promptForCredentials(w)

@@ -23,7 +23,7 @@ const (
 	cookieKeyRefreshToken = "pwa_ref"
 )
 
-func (a *AuthModule) checkServerCookies(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
+func (a *authModule) checkServerCookies(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
 	path := r.URL.Path
 	if path == defaultCallbackURL {
 		return a.handleDefaultCallback(w, r)
@@ -47,7 +47,7 @@ func (a *AuthModule) checkServerCookies(w http.ResponseWriter, r *http.Request) 
 	return http.StatusOK, u, nil
 }
 
-func (a *AuthModule) redirectToAuthorize(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
+func (a *authModule) redirectToAuthorize(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
 	// save the url to state
 	state := a.storeURLAndGenState(r.RequestURI)
 
@@ -60,7 +60,7 @@ func (a *AuthModule) redirectToAuthorize(w http.ResponseWriter, r *http.Request)
 // handleDefaultCallback handles the callback from authn server
 // 1. oauth2 code flow for tokens.
 // 2. redirect the user to pre-auth url.
-func (a *AuthModule) handleDefaultCallback(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
+func (a *authModule) handleDefaultCallback(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
 	q := r.URL.Query()
 	code := q.Get("code")
 	if code == "" {
@@ -97,7 +97,7 @@ func (a *AuthModule) handleDefaultCallback(w http.ResponseWriter, r *http.Reques
 }
 
 // validateJWT verify the jwt token and return claims, any error except expiried should consider is a hack.
-func (a *AuthModule) validateJWT(tok string) (*userInfo, error) {
+func (a *authModule) validateJWT(tok string) (*userInfo, error) {
 	// jwt.Parse verify the signature, and check if the token is expired
 	parsed, err := jwt.Parse([]byte(tok), jwt.WithKey(jwa.RS256(), a.publicKey))
 	if err != nil {
@@ -147,7 +147,7 @@ func (a *AuthModule) validateJWT(tok string) (*userInfo, error) {
 	return userInfo, nil
 }
 
-func (a *AuthModule) refreshToken(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
+func (a *authModule) refreshToken(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
 	refreshToken, err := r.Cookie(cookieKeyRefreshToken)
 	if err != nil {
 		// This may happen if user manually cleanup the refresh token

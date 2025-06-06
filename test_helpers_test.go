@@ -134,7 +134,7 @@ func genAccessToken(t *testing.T, iss string, exp time.Time, clientID string, us
 	return string(signed)
 }
 
-func newAuthModule(t *testing.T, testServer *httptest.Server, ty authType) *AuthModule {
+func newAuthModule(t *testing.T, testServer *httptest.Server, ty authType) *authModule {
 	baCache, err := ristretto.NewCache(&ristretto.Config[string, *basicAuth]{
 		NumCounters: 1e7,
 		MaxCost:     1e7,
@@ -149,7 +149,7 @@ func newAuthModule(t *testing.T, testServer *httptest.Server, ty authType) *Auth
 	})
 	require.NoError(t, err)
 
-	a := &AuthModule{
+	a := &authModule{
 		AuthType:     ty,
 		ClientID:     "test-client-id",
 		ClientSecret: "test-client-secret",

@@ -18,7 +18,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 	tests := []struct {
 		name        string
 		caddyfile   string
-		expected    *AuthModule
+		expected    *authModule
 		expectError bool
 	}{
 		{
@@ -29,7 +29,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 				client_secret the-client-secret
 				roles role1 role2
 			}`,
-			expected: &AuthModule{
+			expected: &authModule{
 				AuthType:     authTypeBasicAuth,
 				ClientID:     "the-client-id",
 				ClientSecret: "the-client-secret",
@@ -45,7 +45,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 				client_secret the-client-secret
 				roles role1 role2
 			}`,
-			expected: &AuthModule{
+			expected: &authModule{
 				AuthType:     authTypeServerCookies,
 				ClientID:     "the-client-id",
 				ClientSecret: "the-client-secret",
@@ -63,7 +63,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 				callback_url https://example.com/callback
 				public_urls path_prefix:/path1 path_prefix:/path2
 			}`,
-			expected: &AuthModule{
+			expected: &authModule{
 				AuthType:     authTypeBasicAuth,
 				ClientID:     "the-client-id",
 				ClientSecret: "the-client-secret",
@@ -80,7 +80,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 				client_secret the-client-secret
 				roles role1
 			}`,
-			expected: &AuthModule{
+			expected: &authModule{
 				AuthType:     authTypeBasicAuth,
 				ClientSecret: "the-client-secret",
 				Roles:        []string{"role1"},
@@ -94,7 +94,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 				client_id the-client-id
 				roles role1
 			}`,
-			expected: &AuthModule{
+			expected: &authModule{
 				AuthType: authTypeBasicAuth,
 				ClientID: "the-client-id",
 				Roles:    []string{"role1"},
@@ -108,7 +108,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 				client_id the-client-id
 				client_secret the-client-secret
 			}`,
-			expected: &AuthModule{
+			expected: &authModule{
 				AuthType:     authTypeBasicAuth,
 				ClientID:     "the-client-id",
 				ClientSecret: "the-client-secret",
@@ -162,7 +162,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := caddyfile.NewTestDispenser(tt.caddyfile)
-			p := &AuthModule{}
+			p := &authModule{}
 			err := p.UnmarshalCaddyfile(d)
 
 			if tt.expectError {
@@ -183,12 +183,12 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 func TestAuthConfigValidate(t *testing.T) {
 	tests := []struct {
 		name        string
-		auth        AuthModule
+		auth        authModule
 		expectError bool
 	}{
 		{
 			name: "valid configuration",
-			auth: AuthModule{
+			auth: authModule{
 				AuthType:     authTypeBasicAuth,
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
@@ -199,7 +199,7 @@ func TestAuthConfigValidate(t *testing.T) {
 		},
 		{
 			name: "missing auth_type",
-			auth: AuthModule{
+			auth: authModule{
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
 				Roles:        []string{"admin", "user"},
@@ -208,7 +208,7 @@ func TestAuthConfigValidate(t *testing.T) {
 		},
 		{
 			name: "missing client_id",
-			auth: AuthModule{
+			auth: authModule{
 				AuthType:     authTypeBasicAuth,
 				ClientSecret: "test-client-secret",
 				Roles:        []string{"admin"},
@@ -217,7 +217,7 @@ func TestAuthConfigValidate(t *testing.T) {
 		},
 		{
 			name: "missing client_secret",
-			auth: AuthModule{
+			auth: authModule{
 				AuthType: authTypeBasicAuth,
 				ClientID: "test-client-id",
 				Roles:    []string{"admin"},
@@ -226,7 +226,7 @@ func TestAuthConfigValidate(t *testing.T) {
 		},
 		{
 			name: "missing roles",
-			auth: AuthModule{
+			auth: authModule{
 				AuthType:     authTypeBasicAuth,
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
@@ -235,7 +235,7 @@ func TestAuthConfigValidate(t *testing.T) {
 		},
 		{
 			name: "empty roles slice",
-			auth: AuthModule{
+			auth: authModule{
 				AuthType:     authTypeBasicAuth,
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
@@ -245,7 +245,7 @@ func TestAuthConfigValidate(t *testing.T) {
 		},
 		{
 			name: "missing callback_url",
-			auth: AuthModule{
+			auth: authModule{
 				AuthType:     authTypeServerCookies,
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
@@ -281,7 +281,7 @@ example.com {
 	ctx, err := caddy.ProvisionContext(cfg)
 	require.NoError(t, err)
 
-	a := &AuthModule{
+	a := &authModule{
 		AuthType:     authTypeBasicAuth,
 		ClientID:     "test-client-id",
 		ClientSecret: "test-client-secret",

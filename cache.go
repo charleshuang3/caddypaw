@@ -12,7 +12,7 @@ type basicAuth struct {
 	user *userInfo
 }
 
-func (a *AuthModule) storeBasicAuth(username, password string, user *userInfo) {
+func (a *authModule) storeBasicAuth(username, password string, user *userInfo) {
 	o := &basicAuth{
 		password: password,
 		user:     user,
@@ -24,7 +24,7 @@ func (a *AuthModule) storeBasicAuth(username, password string, user *userInfo) {
 	a.basicAuthCache.SetWithTTL(username, o, 1, ttl)
 }
 
-func (a *AuthModule) getBasicAuth(username string) (*basicAuth, bool) {
+func (a *authModule) getBasicAuth(username string) (*basicAuth, bool) {
 	o, ok := a.basicAuthCache.Get(username)
 	if !ok {
 		return nil, false
@@ -36,13 +36,13 @@ const (
 	defaultTTL = 10 * time.Minute
 )
 
-func (a *AuthModule) storeURLAndGenState(url string) string {
+func (a *authModule) storeURLAndGenState(url string) string {
 	state := uuid.NewString()
 	a.stateCache.SetWithTTL(state, url, 1, defaultTTL)
 	return state
 }
 
-func (a *AuthModule) getState(state string) (string, bool) {
+func (a *authModule) getState(state string) (string, bool) {
 	url, ok := a.stateCache.Get(state)
 	if !ok {
 		return "", false
@@ -50,7 +50,7 @@ func (a *AuthModule) getState(state string) (string, bool) {
 	return url, true
 }
 
-func (a *AuthModule) getAndDelState(state string) (string, bool) {
+func (a *authModule) getAndDelState(state string) (string, bool) {
 	url, ok := a.stateCache.Get(state)
 	if !ok {
 		return "", false

@@ -7,7 +7,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (a *AuthModule) logErr(r *http.Request, reason string) {
+func (a *authModule) logErr(r *http.Request, reason string) {
 	if a.authnConfig.FirewallURL == "" {
 		return
 	}

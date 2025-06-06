@@ -24,12 +24,12 @@ var (
 )
 
 func init() {
-	caddy.RegisterModule(AuthModule{})
+	caddy.RegisterModule(authModule{})
 	httpcaddyfile.RegisterHandlerDirective("paw_auth", parseDirectivePawAuth)
 }
 
 func parseDirectivePawAuth(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	a := &AuthModule{}
+	a := &authModule{}
 	err := a.UnmarshalCaddyfile(h.Dispenser)
 	return a, err
 }
@@ -53,8 +53,8 @@ func (ty *authType) String() string {
 	}
 }
 
-// AuthModule is a middleware module that handles authentication and authorization.
-type AuthModule struct {
+// authModule is a middleware module that handles authentication and authorization.
+type authModule struct {
 	logger *zap.Logger
 
 	// from paw_auth directive
@@ -77,15 +77,15 @@ type AuthModule struct {
 }
 
 // CaddyModule returns the Caddy module information.
-func (AuthModule) CaddyModule() caddy.ModuleInfo {
+func (authModule) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  "http.handlers.paw_auth",
-		New: func() caddy.Module { return new(AuthModule) },
+		New: func() caddy.Module { return new(authModule) },
 	}
 }
 
 // Provision sets up the module.
-func (a *AuthModule) Provision(ctx caddy.Context) error {
+func (a *authModule) Provision(ctx caddy.Context) error {
 	if err := a.configValidate(); err != nil {
 		return err
 	}
@@ -136,7 +136,7 @@ func (a *AuthModule) Provision(ctx caddy.Context) error {
 }
 
 // configValidate ensures the module's configuration is valid.
-func (a *AuthModule) configValidate() error {
+func (a *authModule) configValidate() error {
 	if a.AuthType == authTypeNone {
 		return fmt.Errorf("auth_type is required, allow value basic_auth or server_cookies")
 	}
@@ -157,7 +157,7 @@ func (a *AuthModule) configValidate() error {
 }
 
 // ServeHTTP implements the caddyhttp.MiddlewareHandler interface.
-func (a *AuthModule) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+func (a *authModule) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	path := r.URL.Path
 	for _, u := range a.PublicURLs {
 		if u.Match(path) {
@@ -229,7 +229,7 @@ func (u *userInfo) checkRole(allowRoles []string) bool {
 
 // checkAuth of request, return http status code, user info and error.
 // If status is http.StatusFound (302), the response is already written by this function or its sub-functions.
-func (a *AuthModule) checkAuth(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
+func (a *authModule) checkAuth(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
 	switch a.AuthType {
 	case authTypeBasicAuth:
 		return a.checkBasicAuth(w, r)
@@ -241,7 +241,7 @@ func (a *AuthModule) checkAuth(w http.ResponseWriter, r *http.Request) (int, *us
 }
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
-func (a *AuthModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (a *authModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// the caddyfile config:
 	// paw_auth {
 	//   basic_auth / server_cookies
@@ -313,7 +313,7 @@ func (a *AuthModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 var (
 	// Interface guards
-	_ caddy.Provisioner           = (*AuthModule)(nil)
-	_ caddyhttp.MiddlewareHandler = (*AuthModule)(nil)
-	_ caddyfile.Unmarshaler       = (*AuthModule)(nil)
+	_ caddy.Provisioner           = (*authModule)(nil)
+	_ caddyhttp.MiddlewareHandler = (*authModule)(nil)
+	_ caddyfile.Unmarshaler       = (*authModule)(nil)
 )

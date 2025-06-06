@@ -31,7 +31,7 @@ func validUser() *userInfo {
 }
 
 func TestAuthModule_validateJWT_Success(t *testing.T) {
-	authModule := &AuthModule{
+	authModule := &authModule{
 		ClientID:  "test-client",
 		publicKey: testdata.PublicKey,
 		authnConfig: &config.AuthnConfig{
@@ -57,7 +57,7 @@ func TestAuthModule_validateJWT_Success(t *testing.T) {
 }
 
 func TestAuthModule_validateJWT_Error(t *testing.T) {
-	authModule := &AuthModule{
+	authModule := &authModule{
 		ClientID:  "test-client-id",
 		publicKey: testdata.PublicKey,
 		authnConfig: &config.AuthnConfig{
