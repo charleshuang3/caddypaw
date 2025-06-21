@@ -161,7 +161,8 @@ func (a *authModule) refreshToken(w http.ResponseWriter, r *http.Request) (int, 
 
 	tokens, err := ts.Token()
 	if err != nil {
-		return http.StatusUnauthorized, nil, err
+		// This may happen if refresh token also expired.
+		return a.redirectToAuthorize(w, r)
 	}
 
 	if err := setTokensToCookie(w, tokens); err != nil {

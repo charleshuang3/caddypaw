@@ -470,10 +470,9 @@ func TestCheckServerCookies_refreshToken_Error(t *testing.T) {
 	code, user, err := a.checkServerCookies(w, req)
 
 	// 5. Assert that the response code is http.StatusUnauthorized and an error is returned.
-	assert.Equal(t, http.StatusUnauthorized, code)
+	assert.Equal(t, http.StatusFound, code)
 	assert.Nil(t, user)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "oauth2: cannot fetch token: 401 Unauthorized")
+	assert.NoError(t, err)
 }
 
 func TestCheckServerCookies_withAccessToken(t *testing.T) {

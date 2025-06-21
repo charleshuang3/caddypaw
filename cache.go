@@ -19,7 +19,7 @@ func (a *authModule) storeBasicAuth(username, password string, user *userInfo) {
 	}
 
 	expiration := time.Unix(user.Expiration, 0)
-	ttl := expiration.Sub(time.Now())
+	ttl := time.Until(expiration)
 
 	a.basicAuthCache.SetWithTTL(username, o, 1, ttl)
 }
