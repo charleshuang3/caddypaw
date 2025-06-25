@@ -40,6 +40,7 @@ const (
 	authTypeNone authType = iota
 	authTypeBasicAuth
 	authTypeServerCookies
+	authTypeBearerToken
 )
 
 func (ty *authType) String() string {
@@ -48,6 +49,8 @@ func (ty *authType) String() string {
 		return "basic_auth"
 	case authTypeServerCookies:
 		return "server_cookies"
+	case authTypeBearerToken:
+		return "bearer_token"
 	default:
 		return "none"
 	}
@@ -65,6 +68,7 @@ type authModule struct {
 	Roles        []string      `json:"roles,omitempty"`
 	CallbackURL  string        `json:"callback_url,omitempty"`
 	PublicURLs   []*urlMatcher `json:"public_urls,omitempty"`
+	Token        string        `json:"token,omitempty"`
 
 	// from paw_global_option
 	authnConfig *config.AuthnConfig
@@ -140,6 +144,13 @@ func (a *authModule) configValidate() error {
 	if a.AuthType == authTypeNone {
 		return fmt.Errorf("auth_type is required, allow value basic_auth or server_cookies")
 	}
+	if a.AuthType == authTypeBearerToken {
+		if a.Token == "" {
+			return fmt.Errorf("token is required")
+		}
+		return nil
+	}
+
 	if a.ClientID == "" {
 		return fmt.Errorf("client_id is required")
 	}
@@ -169,9 +180,12 @@ func (a *authModule) ServeHTTP(w http.ResponseWriter, r *http.Request, next cadd
 
 	switch status {
 	case http.StatusOK:
-		// Have userinfo, can go to next checker
-		if ok := user.checkRole(a.Roles); !ok {
-			return caddyhttp.Error(http.StatusForbidden, fmt.Errorf("forbidden"))
+		// bearer token does not use role
+		if a.AuthType != authTypeBearerToken {
+			// Have userinfo, can go to next checker
+			if ok := user.checkRole(a.Roles); !ok {
+				return caddyhttp.Error(http.StatusForbidden, fmt.Errorf("forbidden"))
+			}
 		}
 		return next.ServeHTTP(w, r)
 	case http.StatusFound:
@@ -235,6 +249,8 @@ func (a *authModule) checkAuth(w http.ResponseWriter, r *http.Request) (int, *us
 		return a.checkBasicAuth(w, r)
 	case authTypeServerCookies:
 		return a.checkServerCookies(w, r)
+	case authTypeBearerToken:
+		return a.checkBearerToken(w, r)
 	default:
 		return http.StatusInternalServerError, nil, fmt.Errorf("unknown auth type: %d", a.AuthType)
 	}
@@ -302,6 +318,16 @@ func (a *authModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				a.PublicURLs = append(a.PublicURLs, u)
 			}
+		case "bearer_token":
+			if a.AuthType != authTypeNone {
+				return d.SyntaxErr("auth type can only be set once")
+			}
+			a.AuthType = authTypeBearerToken
+		case "token":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			a.Token = d.Val()
 
 		default:
 			return d.Errf("unrecognized subdirective '%s'", d.Val())

@@ -157,6 +157,50 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 			}`,
 			expectError: true,
 		},
+		{
+			name: "valid configuration with bearer_token",
+			caddyfile: `paw_auth {
+				bearer_token
+				token test-token
+				roles role1 role2
+			}`,
+			expected: &authModule{
+				AuthType: authTypeBearerToken,
+				Token:    "test-token",
+				Roles:    []string{"role1", "role2"},
+			},
+			expectError: false,
+		},
+		{
+			name: "missing token",
+			caddyfile: `paw_auth {
+				bearer_token
+				roles role1 role2
+			}`,
+			expected: &authModule{
+				AuthType: authTypeBearerToken,
+				Roles:    []string{"role1", "role2"},
+			},
+			expectError: false,
+		},
+		{
+			name: "bearer_token with other fields",
+			caddyfile: `paw_auth {
+				bearer_token
+				token test-token
+				roles role1 role2
+				client_id client-id
+				client_secret client-secret
+			}`,
+			expected: &authModule{
+				AuthType:     authTypeBearerToken,
+				Token:        "test-token",
+				Roles:        []string{"role1", "role2"},
+				ClientID:     "client-id",
+				ClientSecret: "client-secret",
+			},
+			expectError: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -175,6 +219,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 				assert.Equal(t, tt.expected.Roles, p.Roles)
 				assert.Equal(t, tt.expected.CallbackURL, p.CallbackURL)
 				assert.Equal(t, tt.expected.PublicURLs, p.PublicURLs)
+				assert.Equal(t, tt.expected.Token, p.Token)
 			}
 		})
 	}
@@ -250,6 +295,23 @@ func TestAuthConfigValidate(t *testing.T) {
 				ClientID:     "test-client-id",
 				ClientSecret: "test-client-secret",
 				Roles:        []string{"admin"},
+			},
+			expectError: true,
+		},
+		{
+			name: "valid configuration with bearer token",
+			auth: authModule{
+				AuthType: authTypeBearerToken,
+				Token:    "test-token",
+				Roles:    []string{"admin"},
+			},
+			expectError: false,
+		},
+		{
+			name: "missing token with bearer token",
+			auth: authModule{
+				AuthType: authTypeBearerToken,
+				Roles:    []string{"admin"},
 			},
 			expectError: true,
 		},

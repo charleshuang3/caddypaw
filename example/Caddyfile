@@ -32,3 +32,11 @@ app2.example.com:8443 {
 	respond "Hi, This is app2" 200
 }
 
+app3.example.com:8443 {
+	paw_auth {
+		bearer_token
+		token test-token
+	}
+
+	respond "Hi, This is app3" 200
+}
