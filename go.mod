@@ -6,7 +6,7 @@ require (
 	bitbucket.org/creachadair/stringset v0.0.14
 	github.com/caddyserver/caddy/v2 v2.10.0
 	github.com/dgraph-io/ristretto/v2 v2.2.0
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.0
 	golang.org/x/oauth2 v0.30.0
 	gopkg.in/yaml.v2 v2.4.0
 )
