@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/goccy/go-yaml"
 	"github.com/lestrrat-go/jwx/v3/jwk"
-	"gopkg.in/yaml.v2"
 )
 
 type AuthnConfig struct {

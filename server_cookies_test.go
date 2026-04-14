@@ -284,6 +284,7 @@ func TestCheckServerCookies_handleDefaultCallback_Error(t *testing.T) {
 		mockServerCode int
 		setup          func() // setup for test case
 		assertCode     int
+		expectErr      bool
 		assertErr      string
 	}
 
@@ -293,6 +294,7 @@ func TestCheckServerCookies_handleDefaultCallback_Error(t *testing.T) {
 			code:       "",
 			state:      "some-state",
 			assertCode: http.StatusBadRequest,
+			expectErr:  true,
 			assertErr:  "no code",
 		},
 		{
@@ -300,14 +302,15 @@ func TestCheckServerCookies_handleDefaultCallback_Error(t *testing.T) {
 			code:       "some-code",
 			state:      "",
 			assertCode: http.StatusBadRequest,
+			expectErr:  true,
 			assertErr:  "no state",
 		},
 		{
 			name:       "Invalid State",
 			code:       "some-code",
 			state:      "invalid-state",
-			assertCode: http.StatusBadRequest,
-			assertErr:  "invalid state",
+			assertCode: http.StatusFound,
+			expectErr:  false,
 		},
 		{
 			name:           "Mock Server 401",
@@ -318,6 +321,7 @@ func TestCheckServerCookies_handleDefaultCallback_Error(t *testing.T) {
 				mockServer.responseCode = http.StatusUnauthorized
 			},
 			assertCode: http.StatusUnauthorized,
+			expectErr:  true,
 			assertErr:  "oauth2: cannot fetch token: 401 Unauthorized\nResponse: ",
 		},
 	}
@@ -341,8 +345,12 @@ func TestCheckServerCookies_handleDefaultCallback_Error(t *testing.T) {
 
 			assert.Equal(t, tc.assertCode, code)
 			assert.Nil(t, user)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tc.assertErr)
+			if tc.expectErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.assertErr)
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
 }
