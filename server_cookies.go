@@ -76,8 +76,11 @@ func (a *authModule) handleDefaultCallback(w http.ResponseWriter, r *http.Reques
 	// state must be known
 	redirect, ok := a.getAndDelState(state)
 	if !ok {
-		a.logErr(r, "callback: invalid state")
-		return http.StatusBadRequest, nil, caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("invalid state"))
+		// State not found: may have expired, been evicted from cache, or is a replay.
+		// Redirect to a fresh auth flow rather than returning a 400, which could
+		// cause a redirect loop if the error handler sends the user back here.
+		a.logErr(r, "callback: unknown state, restarting auth flow")
+		return a.redirectToAuthorize(w, r)
 	}
 
 	// exchange code

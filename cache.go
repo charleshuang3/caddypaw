@@ -39,6 +39,7 @@ const (
 func (a *authModule) storeURLAndGenState(url string) string {
 	state := uuid.NewString()
 	a.stateCache.SetWithTTL(state, url, 1, defaultTTL)
+	a.stateCache.Wait() // ensure the item is committed before returning, Ristretto writes are async
 	return state
 }
 
