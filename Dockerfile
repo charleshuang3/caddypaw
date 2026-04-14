@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM golang:1.24 AS builder
+FROM golang:1.26 AS builder
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ RUN go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
 COPY . .
 
 # Build Caddy with specified plugins
-RUN xcaddy build v2.10.0 \
+RUN xcaddy build v2.11.2 \
     --with github.com/caddy-dns/cloudflare \
     --with github.com/charleshuang3/caddypaw=. \
     --output bin/caddy
