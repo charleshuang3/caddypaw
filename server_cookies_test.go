@@ -230,6 +230,26 @@ func TestCheckServerCookies_redirectToAuthorize(t *testing.T) {
 	assert.Equal(t, "/", storedURL)
 }
 
+func TestCheckServerCookies_redirectToAuthorize_Ajax(t *testing.T) {
+	_, testServer := setupMockAuthnServer(t)
+	a := newAuthModule(t, testServer, authTypeServerCookies)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("X-Requested-With", "XMLHttpRequest")
+
+	code, user, err := a.checkServerCookies(w, r)
+
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusUnauthorized, code)
+	assert.Nil(t, user)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	redirectURL := w.Header().Get("X-Redirect-URL")
+	require.NotEmpty(t, redirectURL)
+	assert.Equal(t, a.authnConfig.AuthURL, strings.Split(redirectURL, "?")[0])
+}
+
 func TestCheckServerCookies_handleDefaultCallback(t *testing.T) {
 	mockServer, testServer := setupMockAuthnServer(t)
 	a := newAuthModule(t, testServer, authTypeServerCookies)

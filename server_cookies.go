@@ -52,6 +52,13 @@ func (a *authModule) redirectToAuthorize(w http.ResponseWriter, r *http.Request)
 	state := a.storeURLAndGenState(r.RequestURI)
 
 	u := a.oauth2Config.AuthCodeURL(state)
+
+	if a.isAjax(r) {
+		w.Header().Set("X-Redirect-URL", u)
+		w.WriteHeader(http.StatusUnauthorized)
+		return http.StatusUnauthorized, nil, nil
+	}
+
 	http.Redirect(w, r, u, http.StatusFound)
 
 	return http.StatusFound, nil, nil

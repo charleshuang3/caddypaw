@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/oauth2"
+	"strings"
 
 	"github.com/charleshuang3/caddypaw/internal/config"
 )
@@ -219,6 +220,21 @@ func (a *authModule) ServeHTTP(w http.ResponseWriter, r *http.Request, next cadd
 		}
 		return caddyhttp.Error(http.StatusInternalServerError, fmt.Errorf("unexpected authentication status"))
 	}
+}
+
+func (a *authModule) isAjax(r *http.Request) bool {
+	if r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
+		return true
+	}
+	if strings.Contains(r.Header.Get("Accept"), "application/json") {
+		return true
+	}
+	// Sec-Fetch-Mode: navigate is for top-level navigation.
+	// If it exists and is NOT navigate, it's likely AJAX/Fetch.
+	if mode := r.Header.Get("Sec-Fetch-Mode"); mode != "" && mode != "navigate" {
+		return true
+	}
+	return false
 }
 
 type userInfo struct {

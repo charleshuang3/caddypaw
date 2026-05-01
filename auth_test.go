@@ -434,3 +434,71 @@ func TestServeHTTP_PublicURLs(t *testing.T) {
 		})
 	}
 }
+
+func TestIsAjax(t *testing.T) {
+	a := &authModule{}
+
+	tests := []struct {
+		name     string
+		headers  map[string]string
+		expected bool
+	}{
+		{
+			name:     "no headers",
+			headers:  map[string]string{},
+			expected: false,
+		},
+		{
+			name: "X-Requested-With",
+			headers: map[string]string{
+				"X-Requested-With": "XMLHttpRequest",
+			},
+			expected: true,
+		},
+		{
+			name: "Accept application/json",
+			headers: map[string]string{
+				"Accept": "application/json",
+			},
+			expected: true,
+		},
+		{
+			name: "Accept containing application/json",
+			headers: map[string]string{
+				"Accept": "text/html,application/xhtml+xml,application/json;q=0.9",
+			},
+			expected: true,
+		},
+		{
+			name: "Sec-Fetch-Mode cors",
+			headers: map[string]string{
+				"Sec-Fetch-Mode": "cors",
+			},
+			expected: true,
+		},
+		{
+			name: "Sec-Fetch-Mode navigate",
+			headers: map[string]string{
+				"Sec-Fetch-Mode": "navigate",
+			},
+			expected: false,
+		},
+		{
+			name: "Sec-Fetch-Mode same-origin",
+			headers: map[string]string{
+				"Sec-Fetch-Mode": "same-origin",
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			for k, v := range tt.headers {
+				r.Header.Set(k, v)
+			}
+			assert.Equal(t, tt.expected, a.isAjax(r))
+		})
+	}
+}
