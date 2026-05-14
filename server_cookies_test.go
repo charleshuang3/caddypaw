@@ -246,8 +246,7 @@ func TestCheckServerCookies_redirectToAuthorize_Ajax(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 	redirectURL := w.Header().Get("X-Redirect-URL")
-	require.NotEmpty(t, redirectURL)
-	assert.Equal(t, a.authnConfig.AuthURL, strings.Split(redirectURL, "?")[0])
+	assert.Empty(t, redirectURL)
 }
 
 func TestCheckServerCookies_handleDefaultCallback(t *testing.T) {

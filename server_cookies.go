@@ -32,6 +32,7 @@ func (a *authModule) checkServerCookies(w http.ResponseWriter, r *http.Request) 
 	accessToken, err := r.Cookie(cookieKeyAccessToken)
 	// no access token, redirect user to auth
 	if err != nil {
+		a.logger.Info("no access token, redirecting to authorize", zap.String("path", path))
 		return a.redirectToAuthorize(w, r)
 	}
 
@@ -54,7 +55,6 @@ func (a *authModule) redirectToAuthorize(w http.ResponseWriter, r *http.Request)
 	u := a.oauth2Config.AuthCodeURL(state)
 
 	if a.isAjax(r) {
-		w.Header().Set("X-Redirect-URL", u)
 		w.WriteHeader(http.StatusUnauthorized)
 		return http.StatusUnauthorized, nil, nil
 	}
@@ -87,6 +87,7 @@ func (a *authModule) handleDefaultCallback(w http.ResponseWriter, r *http.Reques
 		// Redirect to a fresh auth flow rather than returning a 400, which could
 		// cause a redirect loop if the error handler sends the user back here.
 		a.logErr(r, "callback: unknown state, restarting auth flow")
+		a.logger.Info("callback: unknown state, redirecting to authorize", zap.String("state", state))
 		return a.redirectToAuthorize(w, r)
 	}
 
@@ -161,6 +162,7 @@ func (a *authModule) refreshToken(w http.ResponseWriter, r *http.Request) (int, 
 	refreshToken, err := r.Cookie(cookieKeyRefreshToken)
 	if err != nil {
 		// This may happen if user manually cleanup the refresh token
+		a.logger.Info("no refresh token, redirecting to authorize", zap.String("path", r.URL.Path))
 		return a.redirectToAuthorize(w, r)
 	}
 
@@ -172,6 +174,7 @@ func (a *authModule) refreshToken(w http.ResponseWriter, r *http.Request) (int, 
 	tokens, err := ts.Token()
 	if err != nil {
 		// This may happen if refresh token also expired.
+		a.logger.Info("refresh token exchange failed, redirecting to authorize", zap.Error(err), zap.String("path", r.URL.Path))
 		return a.redirectToAuthorize(w, r)
 	}
 
