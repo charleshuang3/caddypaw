@@ -1,55 +1,52 @@
-# Define the Caddy version to build
-CADDY_VERSION := "v2.10.0"
+# List available recipes
+default:
+    @just --list
 
-# Define the Caddy build target directory
-BUILD_DIR := "bin"
-
-# Define the Caddy binary name
-CADDY_BIN := BUILD_DIR + "/caddy"
-
-# Define the config location
-CADDYFILE := ".local/Caddyfile"
-
-# Define env file
-ENV_FILE := ".local/env"
-
-# Define the list of Caddy plugins to include
-# The 'github.com/caddy-dns/cloudflare' plugin is essential for Cloudflare DNS challenge.
-CLOUDFLARE_PLUGIN := "github.com/caddy-dns/cloudflare"
-
-# This project
-CURRENT := "github.com/charleshuang3/caddypaw=."
-
-# Default recipe: builds the Caddy binary
-default: build
-
-# Install dependencies recipe: installs xcaddy
-install-deps:
-    @echo "Installing xcaddy..."
-    go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-    @echo "xcaddy installed."
-
-# Build recipe: downloads Caddy and builds it with specified plugins
+# Build project
 build:
-    @echo "Building Caddy {{CADDY_VERSION}} with plugins..."
-    # Create the build directory if it doesn't exist
-    mkdir -p {{BUILD_DIR}}
-    # Use 'xcaddy' to build Caddy with the specified version and plugins.
-    xcaddy build {{CADDY_VERSION}} \
-        --with {{CLOUDFLARE_PLUGIN}} \
-        --with {{CURRENT}} \
-        --output {{CADDY_BIN}}
-    @echo "Caddy binary built at {{CADDY_BIN}}"
+    go build -v ./...
 
-# Run recipe: executes the built Caddy binary
-run:
-    @echo "Running Caddy..."
-    test -f {{ENV_FILE}} && \
-    source {{ENV_FILE}} && \
-    {{CADDY_BIN}} run --config {{CADDYFILE}}
+# Run linters
+lint: lint-backend
 
-# Clean recipe: removes the built Caddy binary and build directory
+# Lint backend code using golangci-lint
+lint-backend:
+    golangci-lint run ./...
+
+# Run go mod tidy
+tidy:
+    go mod tidy
+
+# Update go mod dependencies
+update-go-deps:
+    go get -u -t ./...
+    @just tidy
+
+# Update dependencies
+update-deps: update-go-deps
+
+# Run backend tests
+test: test-backend
+
+# Run backend tests
+test-backend:
+    go test -v ./...
+
+# Format backend code
+fmt: fmt-backend
+
+# Format backend Go code using goimports
+fmt-backend:
+    goimports -w -local "github.com/charleshuang3/caddypaw" .
+
+# Check formatting without modifying files
+fmt-check: fmt-check-backend
+
+# Check backend Go code formatting using goimports
+fmt-check-backend:
+    @test -z "$($(go env GOPATH)/bin/goimports -local github.com/charleshuang3/caddypaw -l . 2>/dev/null || goimports -local github.com/charleshuang3/caddypaw -l .)" || (echo "Unformatted Go files found:" && goimports -local github.com/charleshuang3/caddypaw -l . && exit 1)
+
+# Clean build artifacts
 clean:
-    @echo "Cleaning up build artifacts..."
-    rm -rf {{BUILD_DIR}}
-    @echo "Clean complete."
+    rm -rf bin
+
