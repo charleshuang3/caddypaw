@@ -2,8 +2,7 @@ package caddypaw
 
 import (
 	"time"
-
-	"github.com/google/uuid"
+	"uuid"
 )
 
 type basicAuth struct {
@@ -37,7 +36,7 @@ const (
 )
 
 func (a *authModule) storeURLAndGenState(url string) string {
-	state := uuid.NewString()
+	state := uuid.New().String()
 	a.stateCache.SetWithTTL(state, url, 1, defaultTTL)
 	a.stateCache.Wait() // ensure the item is committed before returning, Ristretto writes are async
 	return state
