@@ -1,5 +1,6 @@
 # Stage 1: Build
-FROM golang:1.26 AS builder
+FROM golang:1.27.1-alpine AS builder
+
 
 WORKDIR /app
 
@@ -20,7 +21,7 @@ RUN xcaddy build v2.11.2 \
     --output bin/caddy
 
 # Stage 2: Runtime
-FROM alpine:latest
+FROM alpine:latest AS deploy
 
 # Install ca-certificates for HTTPS
 RUN apk add --no-cache ca-certificates

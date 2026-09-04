@@ -49,7 +49,7 @@ func (a *authModule) checkBasicAuth(w http.ResponseWriter, r *http.Request) (int
 	if err != nil {
 		return http.StatusInternalServerError, nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode == http.StatusUnauthorized {

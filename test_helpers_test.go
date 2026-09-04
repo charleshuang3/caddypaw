@@ -44,7 +44,7 @@ func (s *mockAuthnServer) basicAuth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(s.user)
+	_ = json.NewEncoder(w).Encode(s.user)
 }
 
 func (s *mockAuthnServer) token(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +71,7 @@ func (s *mockAuthnServer) token(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(tokenResp)
+	_ = json.NewEncoder(w).Encode(tokenResp)
 }
 
 func setupMockAuthnServer(t *testing.T) (*mockAuthnServer, *httptest.Server) {

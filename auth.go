@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"strings"
+
 	"bitbucket.org/creachadair/stringset"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -15,7 +17,6 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/oauth2"
-	"strings"
 
 	"github.com/charleshuang3/caddypaw/internal/config"
 )

@@ -32,23 +32,23 @@ func LoadFromFile(path string) (*AuthnConfig, error) {
 	}
 
 	if res.Issuer == "" {
-		return nil, errors.New("Issuer cannot be empty")
+		return nil, errors.New("issuer cannot be empty")
 	}
 
 	if res.AuthURL == "" {
-		return nil, errors.New("AuthURL cannot be empty")
+		return nil, errors.New("authURL cannot be empty")
 	}
 
 	if res.TokenURL == "" {
-		return nil, errors.New("TokenURL cannot be empty")
+		return nil, errors.New("tokenURL cannot be empty")
 	}
 
 	if res.NonOIDCUserInfoURL == "" {
-		return nil, errors.New("NonOIDCUserInfoURL cannot be empty")
+		return nil, errors.New("nonOIDCUserInfoURL cannot be empty")
 	}
 
 	if res.FirewallURL == "" {
-		return nil, errors.New("FirewallURL cannot be empty")
+		return nil, errors.New("firewallURL cannot be empty")
 	}
 
 	_, err = jwk.ParseKey([]byte(res.PublicKeyPEM), jwk.WithPEM(true))
