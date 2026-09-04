@@ -4,7 +4,7 @@ go 1.27.1
 
 require (
 	bitbucket.org/creachadair/stringset v0.0.14
-	github.com/caddyserver/caddy/v2 v2.11.3
+	github.com/caddyserver/caddy/v2 v2.11.4
 	github.com/dgraph-io/ristretto/v2 v2.4.2
 	github.com/goccy/go-yaml v1.19.2
 	github.com/google/uuid v1.6.0
@@ -55,7 +55,7 @@ require (
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
-	github.com/google/cel-go v0.28.0 // indirect
+	github.com/google/cel-go v0.28.1 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.21 // indirect
 	github.com/googleapis/gax-go/v2 v2.24.1 // indirect

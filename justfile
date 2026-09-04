@@ -2,9 +2,18 @@
 default:
     @just --list
 
-# Build project
+export PATH := `go env GOPATH` + "/bin:" + env_var('PATH')
+
+# Caddy version to build
+CADDY_VERSION := "v2.11.4"
+
+# Build project with xcaddy
 build:
-    go build -v ./...
+    mkdir -p bin
+    xcaddy build {{CADDY_VERSION}} --with github.com/charleshuang3/caddypaw=. --output bin/caddy
+
+
+
 
 # Run linters
 lint: lint-backend

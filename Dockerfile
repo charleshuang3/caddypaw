@@ -1,6 +1,9 @@
-# Stage 1: Build
-FROM golang:1.27.1-alpine AS builder
+ARG GO_VERSION=1.27.1
 
+# Stage 1: Build
+FROM golang:${GO_VERSION}-alpine AS builder
+
+ARG CADDY_VERSION=v2.11.4
 
 WORKDIR /app
 
@@ -15,7 +18,7 @@ RUN go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
 COPY . .
 
 # Build Caddy with specified plugins
-RUN xcaddy build v2.11.2 \
+RUN xcaddy build ${CADDY_VERSION} \
     --with github.com/caddy-dns/cloudflare \
     --with github.com/charleshuang3/caddypaw=. \
     --output bin/caddy
