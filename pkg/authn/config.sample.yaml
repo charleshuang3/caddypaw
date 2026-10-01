@@ -1,6 +1,9 @@
 port: 8081
 ban_handlers_port: 8082
 gin_mode: debug
+# Only these proxies' X-Forwarded-For headers are trusted for client IP
+# resolution (used by the firewall ban logic). Empty means trust none.
+trusted_proxies: []
 db:
   dsn: host=localhost user=user password=pass dbname=db port=9920 sslmode=disable # filepath will use sqlite, empty will use in memory sqlite
   log_level: 4 # Info

@@ -19,6 +19,7 @@ type Config struct {
 	Port            uint                      `yaml:"port"`
 	BanHandlersPort uint                      `yaml:"ban_handlers_port"`
 	GinMode         string                    `yaml:"gin_mode"`
+	TrustedProxies  []string                  `yaml:"trusted_proxies"`
 	OIDC            oidc.OIDCProviderConfig   `yaml:"oidc"`
 	DB              gormw.Config              `yaml:"db"`
 	Firewall        middleware.FirewallConfig `yaml:"firewall"`

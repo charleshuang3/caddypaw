@@ -54,9 +54,9 @@ func main() {
 	// Trust no proxies: ClientIP() must never be spoofed via X-Forwarded-For,
 	// as it feeds the firewall ban logic.
 	router := gin.Default()
-	// Trust no proxies: ClientIP() must never be spoofed via X-Forwarded-For,
-	// as it feeds the firewall ban logic.
-	if err := router.SetTrustedProxies(nil); err != nil {
+	// Only trust X-Forwarded-For from explicitly configured proxies;
+	// ClientIP() feeds the firewall ban logic and must not be spoofable.
+	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
 		log.Fatal().Err(err).Msg("Failed to set trusted proxies")
 	}
 
