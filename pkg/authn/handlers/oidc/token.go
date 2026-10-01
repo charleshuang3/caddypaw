@@ -147,7 +147,7 @@ func (o *OpenIDProvider) handleTokenAuthorizationCode(c *gin.Context) {
 	}
 
 	// All valid we can gen tokens now.
-	resp, err := o.genAllTokens(user, client, authCode.Scopes)
+	resp, err := o.genAllTokens(user, client, authCode.Scopes, authCode.Nonce)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to gen tokens")
 		responseTokenError(c, http.StatusInternalServerError, "temporarily_unavailable", "Failed to gen tokens")
@@ -296,7 +296,7 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 	}
 
 	// All valid we can gen tokens
-	resp, err := o.genAllTokens(user, client, strings.Split(scopes, " "))
+	resp, err := o.genAllTokens(user, client, strings.Split(scopes, " "), "")
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to gen tokens")
 		responseTokenError(c, http.StatusInternalServerError, "temporarily_unavailable", "Failed to gen tokens")
@@ -306,7 +306,7 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func (o *OpenIDProvider) genAllTokens(user *models.User, client *models.Client, scopes []string) (*handleTokenResponse, error) {
+func (o *OpenIDProvider) genAllTokens(user *models.User, client *models.Client, scopes []string, authNonce string) (*handleTokenResponse, error) {
 	resp := &handleTokenResponse{
 		Scope:     strings.Join(scopes, " "),
 		ExpiresIn: client.AccessTokenTTL,
@@ -344,7 +344,7 @@ func (o *OpenIDProvider) genAllTokens(user *models.User, client *models.Client, 
 
 	// gen id token only if scope indudes "openid"
 	if slices.Contains(scopes, "openid") {
-		idToken, err := o.genIDToken(user, client, scopes)
+		idToken, err := o.genIDToken(user, client, scopes, authNonce)
 		if err != nil {
 			return nil, err
 		}
@@ -400,7 +400,7 @@ func (o *OpenIDProvider) genRefreshToken(user *models.User, client *models.Clien
 	return string(signed), nil
 }
 
-func (o *OpenIDProvider) genIDToken(user *models.User, client *models.Client, scopes []string) (string, error) {
+func (o *OpenIDProvider) genIDToken(user *models.User, client *models.Client, scopes []string, authNonce string) (string, error) {
 	scopeSet := set.From(scopes)
 
 	builder := jwt.NewBuilder().
@@ -421,6 +421,12 @@ func (o *OpenIDProvider) genIDToken(user *models.User, client *models.Client, sc
 
 	if scopeSet.Contains("email") {
 		builder.Claim("email", user.Email)
+	}
+
+	// Echo the nonce from the authorization request when present (OIDC Core
+	// §3.1.3.7).
+	if authNonce != "" {
+		builder.Claim("nonce", authNonce)
 	}
 
 	token, err := builder.Build()

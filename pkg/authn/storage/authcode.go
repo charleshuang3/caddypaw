@@ -21,6 +21,7 @@ type AuthCode struct {
 	ClientID    string
 	Scopes      []string
 	RedirectURI string
+	Nonce       string
 }
 
 func NewAuthCodeStorage() *AuthCodeStorage {

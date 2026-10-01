@@ -24,6 +24,8 @@ type handleAuthorizeParams struct {
 	ResponseType string `form:"response_type" binding:"required"`
 	State        string `form:"state" binding:"required"`
 	Scope        string `form:"scope" binding:"required"`
+	// Nonce is optional (OIDC Core §3.1.2.1); echoed into the id_token when set.
+	Nonce string `form:"nonce"`
 }
 
 // handleAuthorize handles the authorization request for the authorization code flow.
@@ -80,6 +82,7 @@ func (o *OpenIDProvider) handleAuthorize(c *gin.Context) {
 		ClientID:    params.ClientID,
 		RedirectURI: params.RedirectURI,
 		Scopes:      scopes,
+		Nonce:       params.Nonce,
 	})
 
 	googleLoginURL := o.config.SSO.Google.oauth2Config().AuthCodeURL(params.State)

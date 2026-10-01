@@ -137,7 +137,7 @@ func TestGenIDToken(t *testing.T) {
 	}
 	scopes := []string{"openid", "profile", "email"}
 
-	token, err := provider.genIDToken(user, client, scopes)
+	token, err := provider.genIDToken(user, client, scopes, "")
 	require.NoError(t, err, "Expected no error when generating ID token")
 
 	// Verify the token using go-oidc
@@ -428,6 +428,80 @@ func TestHandleTokenAuthorizationCode_ClientAuthMethods(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestHandleTokenNonceFlow verifies the nonce is carried from the authorize
+// request through AuthState/AuthCode into the id_token.
+func TestHandleTokenNonceFlow(t *testing.T) {
+	provider, _, router := setupTestProviderForTokenRequest(t)
+
+	// Simulate a successful authorize + login: AuthState carries the nonce,
+	// and successfulLogin copies it into the AuthCode.
+	state := "nonce-state"
+	provider.authStateStorage.Set(state, &storage.AuthState{
+		ClientID:    "existing-client",
+		RedirectURI: "http://localhost/callback",
+		Scopes:      []string{"openid", "profile"},
+		Nonce:       "test-nonce-123",
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/user/login", nil)
+	authState, ok := provider.authStateStorage.Get(state)
+	require.True(t, ok)
+	provider.successfulLogin(state, authState, &models.User{ID: 1, Username: "existinguser", Roles: "user"}, c)
+
+	// Extract the code from the redirect.
+	loc := w.Header().Get("Location")
+	u, err := url.Parse(loc)
+	require.NoError(t, err)
+	code := u.Query().Get("code")
+
+	// Exchange the code.
+	formData := url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"client_id":     {"existing-client"},
+		"client_secret": {"correct-secret"},
+	}
+	req, err := http.NewRequest(http.MethodPost, "/oauth2/token", strings.NewReader(formData.Encode()))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, "Body: %s", rec.Body.String())
+
+	var resp handleTokenResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.NotEmpty(t, resp.IDToken)
+
+	idToken, err := jwt.ParseInsecure([]byte(resp.IDToken))
+	require.NoError(t, err)
+
+	var nonce string
+	err = idToken.Get("nonce", &nonce)
+	require.NoError(t, err, "Expected nonce claim in id_token")
+	assert.Equal(t, "test-nonce-123", nonce)
+}
+
+// TestGenIDToken_NoNonce ensures no nonce claim when none was provided.
+func TestGenIDToken_NoNonce(t *testing.T) {
+	provider, _, _ := setupTestProvider(t)
+
+	user := &models.User{Username: "testuser", Roles: "user"}
+	client := &models.Client{ClientID: "testclient", AccessTokenTTL: 600, RefreshTokenTTL: 1200}
+
+	token, err := provider.genIDToken(user, client, []string{"openid"}, "")
+	require.NoError(t, err)
+
+	idToken, err := jwt.ParseInsecure([]byte(token))
+	require.NoError(t, err)
+
+	var nonce string
+	err = idToken.Get("nonce", &nonce)
+	assert.Error(t, err, "Expected no nonce claim when authNonce is empty")
 }
 
 func TestHandleTokenRefreshToken_Success(t *testing.T) {

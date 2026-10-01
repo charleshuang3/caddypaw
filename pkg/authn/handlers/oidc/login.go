@@ -73,6 +73,7 @@ func (o *OpenIDProvider) successfulLogin(state string, authState *storage.AuthSt
 		ClientID:    authState.ClientID,
 		Scopes:      authState.Scopes,
 		RedirectURI: authState.RedirectURI,
+		Nonce:       authState.Nonce,
 	})
 
 	// 3. Redirect the user to authState.RedirectURI with the authorization code and state

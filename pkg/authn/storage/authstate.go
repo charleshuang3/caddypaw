@@ -20,6 +20,7 @@ type AuthState struct {
 	ClientID    string
 	RedirectURI string
 	Scopes      []string
+	Nonce       string
 }
 
 func NewAuthStateStorage() *AuthStateStorage {
