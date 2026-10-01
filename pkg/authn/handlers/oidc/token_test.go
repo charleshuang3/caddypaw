@@ -282,9 +282,10 @@ func TestHandleTokenAuthorizationCode_Success(t *testing.T) {
 			// Pre-create an auth code
 			authCodeValue := "valid-auth-code-" + strings.Join(tt.scopes, "-")
 			provider.authCodeStorage.Set(authCodeValue, &storage.AuthCode{
-				ClientID: "existing-client",
-				UserID:   1,
-				Scopes:   tt.scopes,
+				ClientID:    "existing-client",
+				UserID:      1,
+				Scopes:      tt.scopes,
+				RedirectURI: "http://localhost/callback",
 			})
 
 			formData := url.Values{
@@ -292,6 +293,7 @@ func TestHandleTokenAuthorizationCode_Success(t *testing.T) {
 				"code":          {authCodeValue},
 				"client_id":     {"existing-client"},
 				"client_secret": {"correct-secret"},
+				"redirect_uri":  {"http://localhost/callback"},
 			}
 
 			req, err := http.NewRequest(http.MethodPost, "/oauth2/token", strings.NewReader(formData.Encode()))
@@ -508,6 +510,25 @@ func TestHandleTokenAuthorizationCode_Error(t *testing.T) {
 			},
 			expectedStatus: http.StatusBadRequest,
 			expectedBody:   "Client not found",
+		},
+		{
+			name: "Mismatched redirect URI",
+			formData: url.Values{
+				"code":          {"valid-code"},
+				"client_id":     {"existing-client"},
+				"client_secret": {"correct-secret"},
+				"redirect_uri":  {"http://attacker.example/callback"},
+			},
+			setup: func(t *testing.T, p *OpenIDProvider, db *gormw.DB, formData url.Values) {
+				p.authCodeStorage.Set("valid-code", &storage.AuthCode{
+					ClientID:    "existing-client",
+					UserID:      1,
+					Scopes:      []string{"openid"},
+					RedirectURI: "http://localhost/callback",
+				})
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedBody:   "Invalid redirect URI",
 		},
 		{
 			name: "Invalid client secret",

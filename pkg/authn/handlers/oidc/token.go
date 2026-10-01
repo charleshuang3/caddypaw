@@ -49,6 +49,9 @@ type handleTokenAuthorizationCodeParams struct {
 	Code         string `form:"code" binding:"required"`
 	ClientID     string `form:"client_id" binding:"required"`
 	ClientSecret string `form:"client_secret" binding:"required"`
+	// RedirectURI is optional for backward compatibility; when present it must
+	// match the redirect_uri of the authorization request (RFC 6749 §4.1.3).
+	RedirectURI string `form:"redirect_uri"`
 }
 
 func (o *OpenIDProvider) handleTokenAuthorizationCode(c *gin.Context) {
@@ -71,6 +74,12 @@ func (o *OpenIDProvider) handleTokenAuthorizationCode(c *gin.Context) {
 	if authCode.ClientID != params.ClientID {
 		// This should never happen unless the requester is cheating.
 		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Invalid client ID")
+		return
+	}
+
+	if params.RedirectURI != "" && params.RedirectURI != authCode.RedirectURI {
+		// This should never happen unless the requester is cheating.
+		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Invalid redirect URI")
 		return
 	}
 
