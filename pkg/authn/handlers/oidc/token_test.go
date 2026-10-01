@@ -170,19 +170,19 @@ func TestHandleToken_Error(t *testing.T) {
 		name           string
 		grantType      string
 		expectedStatus int
-		expectedBody   string
+		expectedError  string
 	}{
 		{
 			name:           "Empty grant_type",
 			grantType:      "",
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "require form value grant_type",
+			expectedError:  "invalid_request",
 		},
 		{
 			name:           "Unsupported grant_type",
 			grantType:      "unsupported_grant",
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Unsupported grant type",
+			expectedError:  "unsupported_grant_type",
 		},
 	}
 
@@ -202,9 +202,21 @@ func TestHandleToken_Error(t *testing.T) {
 			router.ServeHTTP(rec, req)
 
 			assert.Equal(t, tt.expectedStatus, rec.Code, "Expected status %d, got %d. Body: %s", tt.expectedStatus, rec.Code, rec.Body.String())
-			assert.Equal(t, tt.expectedBody, rec.Body.String(), "Expected body %q, got %q", tt.expectedBody, rec.Body.String())
+			assertTokenError(t, rec, tt.expectedError)
 		})
 	}
+}
+
+// assertTokenError verifies the response body is an RFC 6749 §5.2 JSON error
+// with the expected error code.
+func assertTokenError(t *testing.T, rec *httptest.ResponseRecorder, expectedError string) {
+	t.Helper()
+
+	var errResp tokenErrorResponse
+	err := json.Unmarshal(rec.Body.Bytes(), &errResp)
+	require.NoError(t, err, "Failed to unmarshal error response: %s", rec.Body.String())
+	assert.Equal(t, expectedError, errResp.Error, "Expected error %q, got %q", expectedError, errResp.Error)
+	assert.NotEmpty(t, errResp.ErrorDescription, "Expected non-empty error_description")
 }
 
 func setupTestProviderForTokenRequest(t *testing.T) (*OpenIDProvider, *gormw.DB, *gin.Engine) {
@@ -437,7 +449,7 @@ func TestHandleTokenAuthorizationCode_Error(t *testing.T) {
 		formData       url.Values
 		setup          func(*testing.T, *OpenIDProvider, *gormw.DB, url.Values) // Optional setup for specific test cases
 		expectedStatus int
-		expectedBody   string
+		expectedError  string
 	}{
 		{
 			name: "Missing code",
@@ -446,7 +458,7 @@ func TestHandleTokenAuthorizationCode_Error(t *testing.T) {
 				"client_secret": {"test-secret"},
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Missing required parameters",
+			expectedError:  "invalid_request",
 		},
 		{
 			name: "Missing client_id",
@@ -455,7 +467,7 @@ func TestHandleTokenAuthorizationCode_Error(t *testing.T) {
 				"client_secret": {"test-secret"},
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Missing required parameters",
+			expectedError:  "invalid_request",
 		},
 		{
 			name: "Missing client_secret",
@@ -464,7 +476,7 @@ func TestHandleTokenAuthorizationCode_Error(t *testing.T) {
 				"client_id": {"test-client"},
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Missing required parameters",
+			expectedError:  "invalid_request",
 		},
 		{
 			name: "Invalid authorization code",
@@ -474,7 +486,7 @@ func TestHandleTokenAuthorizationCode_Error(t *testing.T) {
 				"client_secret": {"test-secret"},
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Invalid authorization code",
+			expectedError:  "invalid_grant",
 		},
 		{
 			name: "Invalid client ID (does not match auth code)",
@@ -491,7 +503,7 @@ func TestHandleTokenAuthorizationCode_Error(t *testing.T) {
 				})
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Invalid client ID",
+			expectedError:  "invalid_grant",
 		},
 		{
 			name: "Client not found",
@@ -508,8 +520,8 @@ func TestHandleTokenAuthorizationCode_Error(t *testing.T) {
 				})
 				// Do not create the client in the database
 			},
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Client not found",
+			expectedStatus: http.StatusUnauthorized,
+			expectedError:  "invalid_client",
 		},
 		{
 			name: "Mismatched redirect URI",
@@ -528,7 +540,7 @@ func TestHandleTokenAuthorizationCode_Error(t *testing.T) {
 				})
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Invalid redirect URI",
+			expectedError:  "invalid_grant",
 		},
 		{
 			name: "Invalid client secret",
@@ -544,8 +556,8 @@ func TestHandleTokenAuthorizationCode_Error(t *testing.T) {
 					Scopes:   []string{"openid"},
 				})
 			},
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Invalid client secret",
+			expectedStatus: http.StatusUnauthorized,
+			expectedError:  "invalid_client",
 		},
 		{
 			name: "User not found",
@@ -562,8 +574,8 @@ func TestHandleTokenAuthorizationCode_Error(t *testing.T) {
 				})
 				// Do not create user with ID 999
 			},
-			expectedStatus: http.StatusUnauthorized,
-			expectedBody:   "Invalid user",
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "invalid_grant",
 		},
 	}
 
@@ -584,7 +596,7 @@ func TestHandleTokenAuthorizationCode_Error(t *testing.T) {
 			router.ServeHTTP(rec, req)
 
 			assert.Equal(t, tt.expectedStatus, rec.Code, "Expected status %d, got %d. Body: %s", tt.expectedStatus, rec.Code, rec.Body.String())
-			assert.Equal(t, tt.expectedBody, rec.Body.String(), "Expected body %q, got %q", tt.expectedBody, rec.Body.String())
+			assertTokenError(t, rec, tt.expectedError)
 		})
 	}
 }
@@ -595,7 +607,7 @@ func TestHandleTokenRefreshToken_Error(t *testing.T) {
 		formData       url.Values
 		setup          func(*testing.T, *OpenIDProvider, *gormw.DB, url.Values) // Optional setup for specific test cases
 		expectedStatus int
-		expectedBody   string
+		expectedError  string
 	}{
 		{
 			name: "Missing refresh_token",
@@ -604,7 +616,7 @@ func TestHandleTokenRefreshToken_Error(t *testing.T) {
 				"client_secret": {"test-secret"},
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Missing required parameters",
+			expectedError:  "invalid_request",
 		},
 		{
 			name: "Missing client_id",
@@ -613,7 +625,7 @@ func TestHandleTokenRefreshToken_Error(t *testing.T) {
 				"client_secret": {"test-secret"},
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Missing required parameters",
+			expectedError:  "invalid_request",
 		},
 		{
 			name: "Missing client_secret",
@@ -622,7 +634,7 @@ func TestHandleTokenRefreshToken_Error(t *testing.T) {
 				"client_id":     {"test-client"},
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Missing required parameters",
+			expectedError:  "invalid_request",
 		},
 		{
 			name: "Invalid refresh token format",
@@ -632,7 +644,7 @@ func TestHandleTokenRefreshToken_Error(t *testing.T) {
 				"client_secret": {"test-secret"},
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Invalid refresh token: format",
+			expectedError:  "invalid_grant",
 		},
 		{
 			name: "Invalid refresh token signature",
@@ -656,7 +668,7 @@ func TestHandleTokenRefreshToken_Error(t *testing.T) {
 				formData.Set("refresh_token", string(signed)+"1") // make signature invalid
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Invalid refresh token: signature",
+			expectedError:  "invalid_grant",
 		},
 		{
 			name: "Expired refresh token",
@@ -689,7 +701,7 @@ func TestHandleTokenRefreshToken_Error(t *testing.T) {
 				require.NoError(t, err)
 			},
 			expectedStatus: http.StatusUnauthorized,
-			expectedBody:   "Invalid refresh token: expired",
+			expectedError:  "invalid_grant",
 		},
 		{
 			name: "Invalid client ID (does not match token audience)",
@@ -705,7 +717,7 @@ func TestHandleTokenRefreshToken_Error(t *testing.T) {
 				formData.Set("refresh_token", token)
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Invalid refresh token: audience",
+			expectedError:  "invalid_grant",
 		},
 		{
 			name: "No Expiration refresh token",
@@ -738,7 +750,7 @@ func TestHandleTokenRefreshToken_Error(t *testing.T) {
 				require.NoError(t, err)
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Invalid refresh token: no expiration",
+			expectedError:  "invalid_grant",
 		},
 		{
 			name: "Invalid issuer",
@@ -771,7 +783,7 @@ func TestHandleTokenRefreshToken_Error(t *testing.T) {
 				require.NoError(t, err)
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Invalid refresh token: issuer",
+			expectedError:  "invalid_grant",
 		},
 		{
 			name: "Refresh token not found in database",
@@ -787,7 +799,7 @@ func TestHandleTokenRefreshToken_Error(t *testing.T) {
 				formData.Set("refresh_token", token)
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Invalid refresh token: not found",
+			expectedError:  "invalid_grant",
 		},
 		{
 			name: "Revoked refresh token",
@@ -811,7 +823,7 @@ func TestHandleTokenRefreshToken_Error(t *testing.T) {
 				require.NoError(t, err)
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Revoked refresh token",
+			expectedError:  "invalid_grant",
 		},
 		{
 			name: "Used refresh token (replay attack)",
@@ -835,7 +847,7 @@ func TestHandleTokenRefreshToken_Error(t *testing.T) {
 				require.NoError(t, err)
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Used refresh token",
+			expectedError:  "invalid_grant",
 		},
 		{
 			name: "Client not found",
@@ -859,8 +871,8 @@ func TestHandleTokenRefreshToken_Error(t *testing.T) {
 				require.NoError(t, err)
 				// Do not create the client in the database
 			},
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Client not found",
+			expectedStatus: http.StatusUnauthorized,
+			expectedError:  "invalid_client",
 		},
 		{
 			name: "Invalid client secret",
@@ -883,8 +895,8 @@ func TestHandleTokenRefreshToken_Error(t *testing.T) {
 				})
 				require.NoError(t, err)
 			},
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Invalid client secret",
+			expectedStatus: http.StatusUnauthorized,
+			expectedError:  "invalid_client",
 		},
 		{
 			name: "User not found",
@@ -909,8 +921,8 @@ func TestHandleTokenRefreshToken_Error(t *testing.T) {
 				require.NoError(t, err)
 				// Do not create user with ID 999
 			},
-			expectedStatus: http.StatusUnauthorized,
-			expectedBody:   "Invalid user",
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "invalid_grant",
 		},
 	}
 
@@ -931,7 +943,7 @@ func TestHandleTokenRefreshToken_Error(t *testing.T) {
 			router.ServeHTTP(rec, req)
 
 			assert.Equal(t, tt.expectedStatus, rec.Code, "Expected status %d, got %d. Body: %s", tt.expectedStatus, rec.Code, rec.Body.String())
-			assert.Equal(t, tt.expectedBody, rec.Body.String(), "Expected body %q, got %q", tt.expectedBody, rec.Body.String())
+			assertTokenError(t, rec, tt.expectedError)
 		})
 	}
 }

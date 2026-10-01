@@ -22,7 +22,7 @@ import (
 func (o *OpenIDProvider) handleToken(c *gin.Context) {
 	grantType := c.PostForm("grant_type")
 	if grantType == "" {
-		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "require form value grant_type")
+		responseTokenError(c, http.StatusBadRequest, "invalid_request", "require form value grant_type")
 		return
 	}
 
@@ -32,7 +32,7 @@ func (o *OpenIDProvider) handleToken(c *gin.Context) {
 	case "refresh_token":
 		o.handleTokenRefreshToken(c)
 	default:
-		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Unsupported grant type")
+		responseTokenError(c, http.StatusBadRequest, "unsupported_grant_type", "Unsupported grant type")
 	}
 }
 
@@ -58,14 +58,14 @@ func (o *OpenIDProvider) handleTokenAuthorizationCode(c *gin.Context) {
 	params := &handleTokenAuthorizationCodeParams{}
 
 	if err := c.ShouldBind(params); err != nil {
-		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Missing required parameters")
+		responseTokenError(c, http.StatusBadRequest, "invalid_request", "Missing required parameters")
 		return
 	}
 
 	authCode, ok := o.authCodeStorage.Get(params.Code)
 	if !ok {
 		// This should never happen unless the requester is cheating.
-		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Invalid authorization code")
+		responseTokenError(c, http.StatusBadRequest, "invalid_grant", "Invalid authorization code")
 		return
 	}
 
@@ -73,13 +73,13 @@ func (o *OpenIDProvider) handleTokenAuthorizationCode(c *gin.Context) {
 
 	if authCode.ClientID != params.ClientID {
 		// This should never happen unless the requester is cheating.
-		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Invalid client ID")
+		responseTokenError(c, http.StatusBadRequest, "invalid_grant", "Invalid client ID")
 		return
 	}
 
 	if params.RedirectURI != "" && params.RedirectURI != authCode.RedirectURI {
 		// This should never happen unless the requester is cheating.
-		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Invalid redirect URI")
+		responseTokenError(c, http.StatusBadRequest, "invalid_grant", "Invalid redirect URI")
 		return
 	}
 
@@ -88,29 +88,29 @@ func (o *OpenIDProvider) handleTokenAuthorizationCode(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// This should never happen unless the requester is cheating.
-			responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Client not found")
+			responseTokenError(c, http.StatusUnauthorized, "invalid_client", "Client not found")
 			return
 		} else {
 			logger.Error().Err(err).Msg("Failed to get client")
-			c.String(http.StatusInternalServerError, "Database error")
+			responseTokenError(c, http.StatusInternalServerError, "temporarily_unavailable", "Database error")
 			return
 		}
 	}
 
 	if client.Secret != params.ClientSecret {
 		// This should never happen unless the requester is cheating.
-		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Invalid client secret")
+		responseTokenError(c, http.StatusUnauthorized, "invalid_client", "Invalid client secret")
 		return
 	}
 
 	user, err := storage.GetUserByID(o.db, authCode.UserID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.String(http.StatusUnauthorized, "Invalid user")
+			responseTokenError(c, http.StatusBadRequest, "invalid_grant", "Invalid user")
 			return
 		}
 		logger.Error().Err(err).Msg("Database error during auth code token request")
-		c.String(http.StatusInternalServerError, "Database error")
+		responseTokenError(c, http.StatusInternalServerError, "temporarily_unavailable", "Database error")
 		return
 	}
 
@@ -118,7 +118,7 @@ func (o *OpenIDProvider) handleTokenAuthorizationCode(c *gin.Context) {
 	resp, err := o.genAllTokens(user, client, authCode.Scopes)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to gen tokens")
-		c.String(http.StatusInternalServerError, "Failed to gen tokens")
+		responseTokenError(c, http.StatusInternalServerError, "temporarily_unavailable", "Failed to gen tokens")
 		return
 	}
 
@@ -135,14 +135,14 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 	params := &handleTokenRefreshTokenParams{}
 
 	if err := c.ShouldBind(params); err != nil {
-		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Missing required parameters")
+		responseTokenError(c, http.StatusBadRequest, "invalid_request", "Missing required parameters")
 		return
 	}
 
 	refreshTokenParts := strings.Split(params.RefreshToken, ".")
 	if len(refreshTokenParts) != 3 {
 		// This should never happen unless the requester is cheating.
-		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Invalid refresh token: format")
+		responseTokenError(c, http.StatusBadRequest, "invalid_grant", "Invalid refresh token: format")
 		return
 	}
 
@@ -151,11 +151,11 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, jwt.TokenExpiredError()) {
 			// let client re-auth
-			c.String(http.StatusUnauthorized, "Invalid refresh token: expired")
+			responseTokenError(c, http.StatusUnauthorized, "invalid_grant", "Invalid refresh token: expired")
 			return
 		}
 		// This should never happen unless the requester is cheating.
-		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Invalid refresh token: signature")
+		responseTokenError(c, http.StatusBadRequest, "invalid_grant", "Invalid refresh token: signature")
 		return
 	}
 
@@ -163,14 +163,14 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 	aud, ok := verifiedToken.Audience()
 	if !ok || !slices.Contains(aud, params.ClientID) {
 		// This should never happen unless the requester is cheating.
-		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Invalid refresh token: audience")
+		responseTokenError(c, http.StatusBadRequest, "invalid_grant", "Invalid refresh token: audience")
 		return
 	}
 
 	// Check token has exp field
 	_, ok = verifiedToken.Expiration()
 	if !ok {
-		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Invalid refresh token: no expiration")
+		responseTokenError(c, http.StatusBadRequest, "invalid_grant", "Invalid refresh token: no expiration")
 		return
 	}
 
@@ -178,7 +178,7 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 	iss, ok := verifiedToken.Issuer()
 	if !ok || iss != o.config.Issuer {
 		// This should never happen unless the requester is cheating.
-		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Invalid refresh token: issuer")
+		responseTokenError(c, http.StatusBadRequest, "invalid_grant", "Invalid refresh token: issuer")
 		return
 	}
 
@@ -187,7 +187,7 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 	err = verifiedToken.Get("scope", &scopes)
 	if err != nil {
 		// This should never happen unless the requester is cheating.
-		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Invalid refresh token: scope")
+		responseTokenError(c, http.StatusBadRequest, "invalid_grant", "Invalid refresh token: scope")
 		return
 	}
 
@@ -197,23 +197,23 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			logger.Error().Err(err).Msg("Refresh token not found, private key leak?")
-			responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Invalid refresh token: not found")
+			responseTokenError(c, http.StatusBadRequest, "invalid_grant", "Invalid refresh token: not found")
 			return
 		}
 		logger.Error().Err(err).Msg("Database error during refresh token token request fetch refresh token")
-		c.String(http.StatusInternalServerError, "Database error")
+		responseTokenError(c, http.StatusInternalServerError, "temporarily_unavailable", "Database error")
 		return
 	}
 
 	if refreshToken.Revoked {
-		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Revoked refresh token")
+		responseTokenError(c, http.StatusBadRequest, "invalid_grant", "Revoked refresh token")
 		return
 	}
 
 	if refreshToken.Used {
 		// Replay attack
 		logger.Error().Msg("Replay attack detected")
-		c.String(http.StatusBadRequest, "Used refresh token")
+		responseTokenError(c, http.StatusBadRequest, "invalid_grant", "Used refresh token")
 		return
 	}
 
@@ -222,29 +222,29 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// This should never happen unless the requester is cheating.
-			responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Client not found")
+			responseTokenError(c, http.StatusUnauthorized, "invalid_client", "Client not found")
 			return
 		} else {
 			logger.Error().Err(err).Msg("Failed to get client")
-			c.String(http.StatusInternalServerError, "Database error")
+			responseTokenError(c, http.StatusInternalServerError, "temporarily_unavailable", "Database error")
 			return
 		}
 	}
 
 	if client.Secret != params.ClientSecret {
 		// This should never happen unless the requester is cheating.
-		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Invalid client secret")
+		responseTokenError(c, http.StatusUnauthorized, "invalid_client", "Invalid client secret")
 		return
 	}
 
 	user, err := storage.GetUserByID(o.db, refreshToken.UserID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.String(http.StatusUnauthorized, "Invalid user")
+			responseTokenError(c, http.StatusBadRequest, "invalid_grant", "Invalid user")
 			return
 		}
 		logger.Error().Err(err).Msg("Database error during auth code token request")
-		c.String(http.StatusInternalServerError, "Database error")
+		responseTokenError(c, http.StatusInternalServerError, "temporarily_unavailable", "Database error")
 		return
 	}
 
@@ -252,7 +252,7 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 	refreshToken.Used = true
 	if err := storage.UpdateRefreshToken(o.db, refreshToken); err != nil {
 		logger.Error().Err(err).Msg("Database error during refresh token token request update refresh token")
-		c.String(http.StatusInternalServerError, "Database error")
+		responseTokenError(c, http.StatusInternalServerError, "temporarily_unavailable", "Database error")
 		return
 	}
 
@@ -260,7 +260,7 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 	resp, err := o.genAllTokens(user, client, strings.Split(scopes, " "))
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to gen tokens")
-		c.String(http.StatusInternalServerError, "Failed to gen tokens")
+		responseTokenError(c, http.StatusInternalServerError, "temporarily_unavailable", "Failed to gen tokens")
 		return
 	}
 
