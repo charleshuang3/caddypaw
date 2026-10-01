@@ -52,8 +52,9 @@ func (o *OpenIDProvider) RegisterHandlers(rg *gin.RouterGroup) {
 		oauth2Routes.GET("/authorize", o.handleAuthorize)
 		// Token Endpoint
 		oauth2Routes.POST("/token", o.handleToken)
-		// UserInfo Endpoint
+		// UserInfo Endpoint. OIDC Core §5.3.1 requires both GET and POST.
 		oauth2Routes.GET("/userinfo", o.handleUserInfo)
+		oauth2Routes.POST("/userinfo", o.handleUserInfo)
 		// Well-Known Configuration Endpoint
 		oauth2Routes.GET("/.well-known/openid-configuration", o.handleWellKnownConfig)
 		// JWKS Endpoint

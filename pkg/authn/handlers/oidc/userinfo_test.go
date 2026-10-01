@@ -244,3 +244,23 @@ func assertBearerChallenge(t *testing.T, rec *httptest.ResponseRecorder) {
 	assert.Contains(t, challenge, `error="invalid_token"`)
 	assert.Contains(t, challenge, `error_description="`)
 }
+
+// TestHandleUserInfo_Post verifies the endpoint accepts POST, which OIDC Core
+// §5.3.1 requires the UserInfo endpoint to support.
+func TestHandleUserInfo_Post(t *testing.T) {
+	provider, router := setupTestForUserInfo(t)
+
+	token := genTestAccessToken(t, provider, "existinguser", []string{"openid", "profile"}, time.Now().Add(time.Minute))
+
+	req := httptest.NewRequest(http.MethodPost, "/oauth2/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, "Body: %s", rec.Body.String())
+
+	var resp userInfoResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, "existinguser", resp.Sub)
+	assert.Equal(t, "Existing User", resp.Name)
+}
