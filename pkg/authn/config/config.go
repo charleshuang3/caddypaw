@@ -1,7 +1,9 @@
 package config
 
 import (
+	"net"
 	"os"
+	"strings"
 
 	"github.com/goccy/go-yaml"
 	"github.com/rs/zerolog/log"
@@ -46,6 +48,28 @@ func LoadConfig(path string) *Config {
 	return cfg
 }
 
+// validateTrustedProxies rejects entries that are not a plain IP or CIDR, and
+// the catch-all networks. Trusting every proxy makes the client IP spoofable
+// through X-Forwarded-For, which feeds the firewall ban logic.
+func (c *Config) validateTrustedProxies() {
+	for _, proxy := range c.TrustedProxies {
+		if strings.Contains(proxy, "/") {
+			_, network, err := net.ParseCIDR(proxy)
+			if err != nil {
+				logger.Fatal().Msgf("TrustedProxies entry %q is not a valid IP or CIDR", proxy)
+			}
+			if ones, _ := network.Mask.Size(); ones == 0 {
+				logger.Fatal().Msgf("TrustedProxies entry %q trusts every address", proxy)
+			}
+			continue
+		}
+
+		if net.ParseIP(proxy) == nil {
+			logger.Fatal().Msgf("TrustedProxies entry %q is not a valid IP or CIDR", proxy)
+		}
+	}
+}
+
 func (c *Config) validate() {
 	if c.Port == 0 {
 		logger.Fatal().Msg("Port is missing")
@@ -58,6 +82,8 @@ func (c *Config) validate() {
 	if c.GinMode == "" {
 		logger.Fatal().Msg("GinMode is missing")
 	}
+
+	c.validateTrustedProxies()
 
 	c.OIDC.Validate()
 

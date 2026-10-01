@@ -25,7 +25,7 @@ func TestLoadConfigSuccess(t *testing.T) {
 		Port:            8080,
 		BanHandlersPort: 8081,
 		GinMode:         "debug",
-		TrustedProxies:  []string{},
+		TrustedProxies:  []string{"172.20.0.2", "203.0.113.0/24"},
 		OIDC: oidc.OIDCProviderConfig{
 			Title:         "Test OIDC Provider",
 			PrivateKeyPEM: "testprivatekeypem",

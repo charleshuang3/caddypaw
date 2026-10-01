@@ -1,10 +1,11 @@
 port: 8081
 ban_handlers_port: 8082
 gin_mode: debug
-# Trust X-Forwarded-For only from these proxies/CIDRs. Pin the Docker
-# network subnet (see example/docker-compose.yaml) so this stays valid.
-trusted_proxies:
-  - 172.20.0.0/24
+# Trust X-Forwarded-For only from these proxies/CIDRs. Empty means trust no
+# proxy at all, which is the right default when authn is reached directly.
+# Set the address of the reverse proxy in front of authn when there is one
+# (see example/docker-compose.yaml for a Docker deployment).
+trusted_proxies: []
 db:
   dsn: host=localhost user=user password=pass dbname=db port=9920 sslmode=disable # filepath will use sqlite, empty will use in memory sqlite
   log_level: 4 # Info
