@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -123,6 +124,31 @@ func TestHandleAuthorize_Error(t *testing.T) {
 				"response_type": {"code"},
 				"state":         {"invalid@state"},
 				"scope":         {"openid profile"},
+			},
+			expectedStatus:  http.StatusFound,
+			expectedErrCode: "invalid_request",
+		},
+		{
+			name: "Too long state",
+			queryParams: url.Values{
+				"client_id":     {"test-client-id"},
+				"redirect_uri":  {"http://localhost:8080/callback"},
+				"response_type": {"code"},
+				"state":         {strings.Repeat("a", maxStateLength+1)},
+				"scope":         {"openid profile"},
+			},
+			expectedStatus:  http.StatusFound,
+			expectedErrCode: "invalid_request",
+		},
+		{
+			name: "Too long nonce",
+			queryParams: url.Values{
+				"client_id":     {"test-client-id"},
+				"redirect_uri":  {"http://localhost:8080/callback"},
+				"response_type": {"code"},
+				"state":         {"valid-state"},
+				"scope":         {"openid profile"},
+				"nonce":         {strings.Repeat("a", maxNonceLength+1)},
 			},
 			expectedStatus:  http.StatusFound,
 			expectedErrCode: "invalid_request",
@@ -246,6 +272,31 @@ func TestHandleAuthorize_OptionalParams(t *testing.T) {
 	assert.Equal(t, "test-client-id", authState.ClientID)
 	assert.Equal(t, "http://localhost:8080/callback", authState.RedirectURI)
 	assert.Contains(t, authState.Scopes, "openid")
+}
+
+// TestHandleAuthorize_ScopeNormalization verifies that repeated whitespace in
+// the scope parameter is tolerated and stored normalized, instead of being
+// turned into empty scope names.
+func TestHandleAuthorize_ScopeNormalization(t *testing.T) {
+	provider, _, router := setupTestForHandleAuthorize(t, true)
+
+	queryParams := url.Values{
+		"client_id":     {"test-client-id"},
+		"redirect_uri":  {"http://localhost:8080/callback"},
+		"response_type": {"code"},
+		"state":         {"state-extra-spaces"},
+		"scope":         {"openid  profile"},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/oauth2/authorize?"+queryParams.Encode(), nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, "Body: %s", rec.Body.String())
+
+	authState, ok := provider.authStateStorage.Get("state-extra-spaces")
+	require.True(t, ok, "expected the state to be stored")
+	assert.Equal(t, []string{"openid", "profile"}, authState.Scopes)
 }
 
 func TestHandleAuthorize_Success_LoginPage(t *testing.T) {

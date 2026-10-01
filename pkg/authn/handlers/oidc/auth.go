@@ -21,6 +21,14 @@ var (
 	stateRE = regexp.MustCompile(`^[a-zA-Z0-9-_.]+$`)
 )
 
+const (
+	// maxStateLength bounds the client supplied state, which doubles as the
+	// AuthState storage key.
+	maxStateLength = 255
+	// maxNonceLength bounds the nonce, which is echoed into the id_token.
+	maxNonceLength = 255
+)
+
 type handleAuthorizeParams struct {
 	ClientID     string `form:"client_id" binding:"required"`
 	RedirectURI  string `form:"redirect_uri" binding:"required"`
@@ -96,8 +104,13 @@ func (o *OpenIDProvider) handleAuthorize(c *gin.Context) {
 		return
 	}
 
-	if params.State != "" && !stateRE.MatchString(params.State) {
+	if params.State != "" && (len(params.State) > maxStateLength || !stateRE.MatchString(params.State)) {
 		responseAuthorizeError(c, params.RedirectURI, "invalid_request", "Invalid state parameter format", params.State)
+		return
+	}
+
+	if len(params.Nonce) > maxNonceLength {
+		responseAuthorizeError(c, params.RedirectURI, "invalid_request", "Nonce too long", params.State)
 		return
 	}
 
@@ -106,7 +119,9 @@ func (o *OpenIDProvider) handleAuthorize(c *gin.Context) {
 		params.Scope = client.AllowedScopes
 	}
 
-	scopes := strings.Split(params.Scope, " ")
+	// strings.Fields tolerates repeated or trailing whitespace instead of
+	// turning it into empty scope names.
+	scopes := strings.Fields(params.Scope)
 	if !client.VerifyScopesAllowed(scopes) {
 		responseAuthorizeError(c, params.RedirectURI, "invalid_scope", "Invalid scope", params.State)
 		return
