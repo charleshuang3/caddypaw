@@ -19,7 +19,7 @@ import (
 	"github.com/charleshuang3/caddypaw/pkg/authn/testdata"
 )
 
-func setupTestProvider(t *testing.T) (*OpenIDProvider, *gormw.DB, *gin.Engine) {
+func setupTestProvider(t *testing.T, middlewares ...gin.HandlerFunc) (*OpenIDProvider, *gormw.DB, *gin.Engine) {
 	t.Helper()
 
 	cleanedErrorMessage = false
@@ -43,6 +43,8 @@ func setupTestProvider(t *testing.T) (*OpenIDProvider, *gormw.DB, *gin.Engine) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	// Middlewares must be registered before the routes to apply to them.
+	router.Use(middlewares...)
 	testGroup := router.Group("/")
 	provider.RegisterHandlers(testGroup)
 

@@ -219,10 +219,10 @@ func assertTokenError(t *testing.T, rec *httptest.ResponseRecorder, expectedErro
 	assert.NotEmpty(t, errResp.ErrorDescription, "Expected non-empty error_description")
 }
 
-func setupTestProviderForTokenRequest(t *testing.T) (*OpenIDProvider, *gormw.DB, *gin.Engine) {
+func setupTestProviderForTokenRequest(t *testing.T, middlewares ...gin.HandlerFunc) (*OpenIDProvider, *gormw.DB, *gin.Engine) {
 	t.Helper()
 
-	provider, db, router := setupTestProvider(t)
+	provider, db, router := setupTestProvider(t, middlewares...)
 
 	// Pre-create a user for tests
 	existingUser := models.User{
@@ -502,6 +502,55 @@ func TestGenIDToken_NoNonce(t *testing.T) {
 	var nonce string
 	err = idToken.Get("nonce", &nonce)
 	assert.Error(t, err, "Expected no nonce claim when authNonce is empty")
+}
+
+// TestHandleTokenRefreshToken_FirewallReporting verifies that an expired
+// refresh token — a normal event that the gateway reacts to by restarting the
+// auth flow — is not reported to the firewall, while a tampered token is.
+func TestHandleTokenRefreshToken_FirewallReporting(t *testing.T) {
+	reports := &firewallReports{}
+	provider, _, router := setupTestProviderForTokenRequest(t, reports.middleware())
+
+	expired, err := jwt.NewBuilder().
+		Issuer(provider.config.Issuer).
+		IssuedAt(time.Now().Add(-time.Hour)).
+		Expiration(time.Now().Add(-time.Minute)).
+		Audience([]string{"existing-client"}).
+		Subject("existinguser").
+		Claim("scope", "offline_access").
+		Build()
+	require.NoError(t, err)
+	signed, err := jwt.Sign(expired, jwt.WithKey(jwa.RS256(), provider.privateKey))
+	require.NoError(t, err)
+
+	tokenRequest := func(refreshToken string) *httptest.ResponseRecorder {
+		t.Helper()
+
+		formData := url.Values{
+			"grant_type":    {"refresh_token"},
+			"refresh_token": {refreshToken},
+			"client_id":     {"existing-client"},
+			"client_secret": {"correct-secret"},
+		}
+		req, err := http.NewRequest(http.MethodPost, "/oauth2/token", strings.NewReader(formData.Encode()))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	rec := tokenRequest(string(signed))
+	require.Equal(t, http.StatusUnauthorized, rec.Code, "Body: %s", rec.Body.String())
+	assertTokenError(t, rec, "invalid_grant")
+	assert.Empty(t, reports.reasons, "an expired refresh token must not be reported to the firewall")
+
+	rec = tokenRequest(string(signed) + "1")
+	require.Equal(t, http.StatusBadRequest, rec.Code, "Body: %s", rec.Body.String())
+	assertTokenError(t, rec, "invalid_grant")
+	require.Len(t, reports.reasons, 1, "a tampered refresh token must be reported to the firewall")
+	assert.Contains(t, reports.reasons[0], "signature")
 }
 
 func TestHandleTokenRefreshToken_Success(t *testing.T) {

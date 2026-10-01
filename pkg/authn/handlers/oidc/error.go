@@ -32,10 +32,26 @@ type tokenErrorResponse struct {
 	ErrorDescription string `json:"error_description"`
 }
 
-// responseTokenError writes an RFC 6749 §5.2 JSON error response and logs the
-// detailed message as a possible hacking attempt.
+// responseTokenError writes an RFC 6749 §5.2 JSON error response.
+//
+// Only client side failures (4xx) are logged as possible hacking attempts:
+// 5xx responses are our own fault (database or signing failures) and must not
+// count towards the firewall ban of the caller's IP.
 func responseTokenError(c *gin.Context, httpCode int, errCode, errMsg string) {
-	logMayHack(c, errMsg)
+	if httpCode < http.StatusInternalServerError {
+		logMayHack(c, errMsg)
+	}
+	writeTokenError(c, httpCode, errCode, errMsg)
+}
+
+// responseTokenErrorExpected writes an RFC 6749 §5.2 JSON error response for
+// a normal outcome of the protocol, such as an expired refresh token. The
+// caller did nothing wrong, so it must never be reported to the firewall.
+func responseTokenErrorExpected(c *gin.Context, httpCode int, errCode, errMsg string) {
+	writeTokenError(c, httpCode, errCode, errMsg)
+}
+
+func writeTokenError(c *gin.Context, httpCode int, errCode, errMsg string) {
 	c.JSON(httpCode, &tokenErrorResponse{
 		Error:            errCode,
 		ErrorDescription: errMsg,

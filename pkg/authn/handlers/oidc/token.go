@@ -189,8 +189,10 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 	verifiedToken, err := jwt.Parse([]byte(params.RefreshToken), jwt.WithKey(jwa.RS256(), o.publicKey))
 	if err != nil {
 		if errors.Is(err, jwt.TokenExpiredError()) {
-			// let client re-auth
-			responseTokenError(c, http.StatusUnauthorized, "invalid_grant", "Invalid refresh token: expired")
+			// An expired refresh token is expected (it happens whenever a user
+			// comes back after the refresh token lifetime), so it must not be
+			// counted as a hacking attempt. Let the client re-auth.
+			responseTokenErrorExpected(c, http.StatusUnauthorized, "invalid_grant", "Invalid refresh token: expired")
 			return
 		}
 		// This should never happen unless the requester is cheating.
