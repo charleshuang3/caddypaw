@@ -334,16 +334,30 @@ func TestCheckServerCookies_handleDefaultCallback_Error(t *testing.T) {
 			expectErr:  false,
 		},
 		{
-			name:           "Mock Server 401",
+			name:           "Mock Server 401 invalid_grant",
 			code:           "some-code",
 			state:          a.storeURLAndGenState("http://example.com"),
 			mockServerCode: http.StatusUnauthorized,
 			setup: func() {
 				mockServer.responseCode = http.StatusUnauthorized
+				mockServer.errorCode = "invalid_grant"
 			},
 			assertCode: http.StatusUnauthorized,
 			expectErr:  true,
-			assertErr:  "oauth2: cannot fetch token: 401 Unauthorized\nResponse: ",
+			assertErr:  "oauth2: \"invalid_grant\"",
+		},
+		{
+			name:           "Mock Server 500",
+			code:           "some-code",
+			state:          a.storeURLAndGenState("http://example.com"),
+			mockServerCode: http.StatusInternalServerError,
+			setup: func() {
+				mockServer.responseCode = http.StatusInternalServerError
+				mockServer.errorCode = ""
+			},
+			assertCode: http.StatusBadGateway,
+			expectErr:  true,
+			assertErr:  "oauth2: cannot fetch token",
 		},
 	}
 
@@ -490,21 +504,31 @@ func TestCheckServerCookies_refreshToken_Error(t *testing.T) {
 		Value: refreshToken,
 	})
 
-	// 3. Set the mock server to return a 401 when Exchange is called (simulating invalid refresh token).
+	// 3. Set the mock server to return invalid_grant when Exchange is called
+	// (simulating an expired or already used refresh token).
 	mockServer.responseCode = http.StatusUnauthorized
+	mockServer.errorCode = "invalid_grant"
 
 	w := httptest.NewRecorder()
 
 	// 4. Call a.checkServerCookies.
 	code, user, err := a.checkServerCookies(w, req)
 
-	// 5. Assert that the response code is http.StatusUnauthorized and an error is returned.
+	// 5. Assert that the gateway restarts the auth flow and returns no error.
 	assert.Equal(t, http.StatusFound, code)
 	assert.Nil(t, user)
 	assert.NoError(t, err)
 }
 
 func TestClassifyTokenError(t *testing.T) {
+	retrieveErr := func(statusCode int, errorCode string) error {
+		return &oauth2.RetrieveError{
+			Response:         &http.Response{StatusCode: statusCode},
+			ErrorCode:        errorCode,
+			ErrorDescription: "mock token error",
+		}
+	}
+
 	tests := []struct {
 		name        string
 		err         error
@@ -516,23 +540,43 @@ func TestClassifyTokenError(t *testing.T) {
 			restartFlow: false,
 		},
 		{
-			name:        "retrieve error 400",
-			err:         &oauth2.RetrieveError{Response: &http.Response{StatusCode: http.StatusBadRequest}},
+			name:        "invalid_grant 400",
+			err:         retrieveErr(http.StatusBadRequest, "invalid_grant"),
 			restartFlow: true,
 		},
 		{
-			name:        "retrieve error 401",
-			err:         &oauth2.RetrieveError{Response: &http.Response{StatusCode: http.StatusUnauthorized}},
+			name:        "invalid_grant 401",
+			err:         retrieveErr(http.StatusUnauthorized, "invalid_grant"),
 			restartFlow: true,
 		},
 		{
-			name:        "retrieve error 500",
-			err:         &oauth2.RetrieveError{Response: &http.Response{StatusCode: http.StatusInternalServerError}},
+			name:        "invalid_grant without response",
+			err:         &oauth2.RetrieveError{ErrorCode: "invalid_grant"},
+			restartFlow: true,
+		},
+		{
+			name:        "invalid_client 401",
+			err:         retrieveErr(http.StatusUnauthorized, "invalid_client"),
 			restartFlow: false,
 		},
 		{
-			name:        "retrieve error 503",
-			err:         &oauth2.RetrieveError{Response: &http.Response{StatusCode: http.StatusServiceUnavailable}},
+			name:        "invalid_request 400",
+			err:         retrieveErr(http.StatusBadRequest, "invalid_request"),
+			restartFlow: false,
+		},
+		{
+			name:        "unauthorized without error code",
+			err:         retrieveErr(http.StatusUnauthorized, ""),
+			restartFlow: false,
+		},
+		{
+			name:        "server error 500",
+			err:         retrieveErr(http.StatusInternalServerError, ""),
+			restartFlow: false,
+		},
+		{
+			name:        "rate limited 429",
+			err:         retrieveErr(http.StatusTooManyRequests, ""),
 			restartFlow: false,
 		},
 		{
@@ -541,9 +585,9 @@ func TestClassifyTokenError(t *testing.T) {
 			restartFlow: false,
 		},
 		{
-			name:        "wrapped retrieve error 500",
-			err:         fmt.Errorf("exchange: %w", &oauth2.RetrieveError{Response: &http.Response{StatusCode: http.StatusInternalServerError}}),
-			restartFlow: false,
+			name:        "wrapped invalid_grant",
+			err:         fmt.Errorf("exchange: %w", retrieveErr(http.StatusBadRequest, "invalid_grant")),
+			restartFlow: true,
 		},
 	}
 
@@ -597,6 +641,74 @@ func TestCheckServerCookies_refreshToken_ServerError(t *testing.T) {
 	assert.Equal(t, http.StatusBadGateway, code)
 	require.Error(t, err)
 	assert.Empty(t, w.Header().Get("Location"), "must not redirect on server errors")
+}
+
+// TestCheckServerCookies_callback_InvalidGrant verifies a stale grant makes the
+// callback ask for a new authentication instead of failing with 502.
+func TestCheckServerCookies_callback_InvalidGrant(t *testing.T) {
+	mockServer, testServer := setupMockAuthnServer(t)
+	a := newAuthModule(t, testServer, authTypeServerCookies)
+
+	mockServer.responseCode = http.StatusBadRequest
+	mockServer.errorCode = "invalid_grant"
+	st := a.storeURLAndGenState("http://example.com/path")
+	a.stateCache.Wait()
+
+	w := httptest.NewRecorder()
+	q := url.Values{}
+	q.Set("code", "test-code")
+	q.Set("state", st)
+	r := httptest.NewRequest(http.MethodGet, defaultCallbackURL+"?"+q.Encode(), nil)
+
+	code, _, err := a.checkServerCookies(w, r)
+
+	assert.Equal(t, http.StatusUnauthorized, code)
+	require.Error(t, err)
+	assert.Empty(t, w.Header().Get("Location"), "must not redirect from the callback")
+}
+
+// TestCheckServerCookies_refreshToken_InvalidClient verifies that a
+// misconfigured client does not restart the auth flow: doing so would loop.
+func TestCheckServerCookies_refreshToken_InvalidClient(t *testing.T) {
+	mockServer, testServer := setupMockAuthnServer(t)
+	a := newAuthModule(t, testServer, authTypeServerCookies)
+
+	expiredAccessToken := genAccessToken(t, a.authnConfig.Issuer, time.Now().Add(-time.Hour), a.ClientID, validUser())
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: cookieKeyAccessToken, Value: expiredAccessToken})
+	req.AddCookie(&http.Cookie{Name: cookieKeyRefreshToken, Value: "some-refresh-token"})
+
+	mockServer.responseCode = http.StatusUnauthorized
+	mockServer.errorCode = "invalid_client"
+
+	w := httptest.NewRecorder()
+	code, _, err := a.checkServerCookies(w, req)
+
+	assert.Equal(t, http.StatusBadGateway, code)
+	require.Error(t, err)
+	assert.Empty(t, w.Header().Get("Location"), "must not redirect when the gateway credentials are rejected")
+}
+
+// TestCheckServerCookies_refreshToken_InvalidGrant verifies the refresh path
+// restarts the auth flow when the refresh token is gone.
+func TestCheckServerCookies_refreshToken_InvalidGrant(t *testing.T) {
+	mockServer, testServer := setupMockAuthnServer(t)
+	a := newAuthModule(t, testServer, authTypeServerCookies)
+
+	expiredAccessToken := genAccessToken(t, a.authnConfig.Issuer, time.Now().Add(-time.Hour), a.ClientID, validUser())
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: cookieKeyAccessToken, Value: expiredAccessToken})
+	req.AddCookie(&http.Cookie{Name: cookieKeyRefreshToken, Value: "some-refresh-token"})
+
+	mockServer.responseCode = http.StatusUnauthorized
+	mockServer.errorCode = "invalid_grant"
+
+	w := httptest.NewRecorder()
+	code, _, err := a.checkServerCookies(w, req)
+
+	assert.Equal(t, http.StatusFound, code)
+	require.NoError(t, err)
+	assert.Contains(t, w.Header().Get("Location"), "/oauth2/authorize")
 }
 
 func TestCheckServerCookies_withAccessToken(t *testing.T) {

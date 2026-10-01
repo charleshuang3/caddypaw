@@ -64,18 +64,23 @@ func (a *authModule) redirectToAuthorize(w http.ResponseWriter, r *http.Request)
 	return http.StatusFound, nil, nil
 }
 
-// classifyTokenError inspects a token endpoint / network failure and reports
-// whether the gateway should restart the auth flow (4xx protocol errors mean
-// the token/grant is gone) or fail outright (5xx / network errors mean the
-// authn server is unreachable; redirecting would risk a redirect loop).
-func classifyTokenError(err error) (restartAuthFlow bool) {
+// classifyTokenError reports whether a failed token endpoint call means the
+// user has to authenticate again.
+//
+// Only invalid_grant (the code or refresh token expired, was already used, or
+// belongs to another client) means the grant is gone. Other 4xx responses are
+// gateway misconfiguration (invalid_client, invalid_request) and 5xx, 429 and
+// network failures mean authn is unavailable; restarting the auth flow for any
+// of them would only loop or amplify the load.
+func classifyTokenError(err error) bool {
 	var retrieveErr *oauth2.RetrieveError
-	if errors.As(err, &retrieveErr) && retrieveErr.Response != nil {
-		return retrieveErr.Response.StatusCode < 500
+	if !errors.As(err, &retrieveErr) {
+		// Non-HTTP errors (connection refused, timeouts, ...) are
+		// infrastructure failures.
+		return false
 	}
-	// Non-HTTP errors (connection refused, timeouts, ...) are infrastructure
-	// failures: do not redirect.
-	return false
+
+	return retrieveErr.ErrorCode == "invalid_grant"
 }
 
 // handleDefaultCallback handles the callback from authn server
@@ -113,6 +118,10 @@ func (a *authModule) handleDefaultCallback(w http.ResponseWriter, r *http.Reques
 			a.logger.Error("token exchange failed with server error", zap.Error(err))
 			return http.StatusBadGateway, nil, err
 		}
+		// The grant is gone; the user has to authenticate again. Do not redirect
+		// from here: the browser already sits on the callback URL, and a
+		// persistently failing exchange would loop.
+		a.logger.Info("token exchange failed, the client must authenticate again", zap.Error(err))
 		return http.StatusUnauthorized, nil, err
 	}
 

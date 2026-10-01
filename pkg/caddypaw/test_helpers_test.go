@@ -21,10 +21,14 @@ import (
 type mockAuthnServer struct {
 	t *testing.T
 
-	responseCode      int
+	responseCode int
+	// errorCode is the RFC 6749 §5.2 error the token endpoint reports when
+	// responseCode is not 200.
+	errorCode         string
 	user              *userInfo
 	basicAuthRequests []*http.Request
 	tokenRequests     []*http.Request
+	firewallRequests  []*http.Request
 }
 
 type mockCaddyHTTPHandler struct {
@@ -53,7 +57,14 @@ func (s *mockAuthnServer) token(w http.ResponseWriter, r *http.Request) {
 	s.tokenRequests = append(s.tokenRequests, r)
 
 	if s.responseCode != http.StatusOK {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(s.responseCode)
+		if s.errorCode != "" {
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error":             s.errorCode,
+				"error_description": "mock token error",
+			})
+		}
 		return
 	}
 
@@ -74,6 +85,11 @@ func (s *mockAuthnServer) token(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(tokenResp)
 }
 
+func (s *mockAuthnServer) logError(w http.ResponseWriter, r *http.Request) {
+	s.firewallRequests = append(s.firewallRequests, r)
+	w.WriteHeader(http.StatusOK)
+}
+
 func setupMockAuthnServer(t *testing.T) (*mockAuthnServer, *httptest.Server) {
 	t.Helper()
 
@@ -84,6 +100,7 @@ func setupMockAuthnServer(t *testing.T) (*mockAuthnServer, *httptest.Server) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/user/info", mock.basicAuth)
 	mux.HandleFunc("/oauth2/token", mock.token)
+	mux.HandleFunc("/logerr", mock.logError)
 
 	testServer := httptest.NewServer(mux)
 	httpClient = testServer.Client()
