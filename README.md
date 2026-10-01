@@ -98,4 +98,22 @@ go build ./cmd/caddy
 
 ## Configuration
 
-For configuration examples, please refer to the `example/` directory.
+For configuration examples, please refer to the `example/` directory:
+`Caddyfile` and `authn.config.yaml` are templates to adapt by hand, while
+`docker-compose.yaml` is a complete Docker deployment.
+
+### Docker
+
+The example deployment runs both images on a bridge network with a pinned
+subnet:
+
+```bash
+# Fill in example/docker/*.yaml and example/geoip first (see the comments).
+docker compose -f example/docker-compose.yaml up -d
+```
+
+The gateway address is pinned and listed in the authn config's
+`trusted_proxies`, so `ClientIP()` reports the real client IP to the firewall.
+Neither authn port is published to the host: the OIDC port is reached through
+Caddy, and the firewall handler port (`ban_handlers_port`) is unauthenticated
+and must stay inside the network.

@@ -1,0 +1,25 @@
+# Caddyfile for the Docker deployment (see ../docker-compose.yaml).
+# Replace the example.com domains with your own: Caddy obtains certificates
+# for them, so they must resolve to this host.
+{
+	# Gateway config: where authn lives and how to reach its firewall
+	# handlers. Mounted read-only at /config/authn.yaml.
+	authn_yaml_file /config/authn.yaml
+	order paw_auth before basic_auth
+}
+
+auth.example.com {
+	# Public OIDC endpoints of authn (login page, authorize, token, userinfo).
+	reverse_proxy authn:8081
+}
+
+app1.example.com {
+	paw_auth {
+		basic_auth
+		client_id client_id
+		client_secret client_secret
+		roles admin
+	}
+
+	respond "Hi, This is app1" 200
+}

@@ -1,41 +1,57 @@
-# Example deployment for caddypaw: Caddy gateway + authn sharing a Docker
-# network with a pinned subnet. authn trusts X-Forwarded-For only from this
-# subnet, so gin's ClientIP() resolves the real client IP for the firewall
-# ban logic while remaining unspoofable from outside.
+# Example deployment for caddypaw: the Caddy gateway and the authn server
+# share a Docker network with a pinned subnet. authn trusts X-Forwarded-For
+# only from the pinned gateway address, so gin's ClientIP() resolves the real
+# client IP for the firewall ban logic while staying unspoofable from outside.
+#
+# Run from anywhere in the repository (paths below are relative to this file):
+#
+#   docker compose -f example/docker-compose.yaml up -d
+#
+# Before the first start:
+#   - point the domains in docker/Caddyfile at this host (Caddy obtains
+#     certificates for them),
+#   - fill in docker/authn-server.yaml (OIDC key, Google login, firewall
+#     provider) and docker/authn-gateway.yaml (public key, domains),
+#   - put GeoLite2-City.mmdb and GeoLite2-ASN.mmdb into example/geoip.
+#
+# authn listens on two ports: the OIDC port (8081, reached through Caddy) and
+# the firewall handler port (8082, used by Caddy to report abusive IPs). The
+# firewall handlers are unauthenticated, so neither port is published to the
+# host: they must only be reachable from inside this network.
 
 services:
   caddy:
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
     volumes:
-      - ./example/Caddyfile:/config/Caddyfile:ro
-      - ./example/authn.config.yaml:/config/authn.config.yaml:ro
+      - ./docker/Caddyfile:/config/Caddyfile:ro
+      - ./docker/authn-gateway.yaml:/config/authn.yaml:ro
       - caddy_data:/data
       - caddy_config:/config
     networks:
       caddypaw:
-        # Optional but stricter: pin the gateway IP and trust only this
-        # single address in authn's trusted_proxies instead of the subnet.
-        # ipv4_address: 172.20.0.2
+        # Pinned so trusted_proxies in docker/authn-server.yaml stays valid
+        # across restarts of the network.
+        ipv4_address: 172.20.0.2
     restart: unless-stopped
 
   authn:
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile.authn
-    # Keep the authn ports unpublished: only reachable from inside the
-    # caddypaw network. ban_handlers_port must never be exposed publicly.
-    expose:
-      - "8081"
-      - "8082"
     volumes:
-      - ./example/authn.config.yaml:/app/authn.config.yaml:ro
+      # Server side config, not the file Caddy loads.
+      - ./docker/authn-server.yaml:/app/authn.config.yaml:ro
+      # SQLite database: users, clients and refresh tokens.
       - authn_data:/app/data
+      # GeoLite2 databases. Kept writable so authn can adopt databases dropped
+      # here by an external geoipupdate.
+      - ./geoip:/app/geoip
     environment:
       CONFIG_PATH: /app/authn.config.yaml
     networks:
@@ -45,8 +61,6 @@ services:
 networks:
   caddypaw:
     driver: bridge
-    # The subnet must be pinned so trusted_proxies in authn.config.yaml
-    # stays valid across restarts.
     ipam:
       config:
         - subnet: 172.20.0.0/24

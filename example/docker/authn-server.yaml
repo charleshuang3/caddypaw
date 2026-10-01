@@ -1,0 +1,57 @@
+# authn server configuration, loaded by the authn container through
+# CONFIG_PATH (/app/authn.config.yaml). The configuration Caddy loads is
+# docker/authn-gateway.yaml instead.
+
+port: 8081
+ban_handlers_port: 8082
+gin_mode: release
+
+# Caddy is the only thing in front of authn and it has the pinned address
+# below, so its X-Forwarded-For header is trusted and ClientIP() returns the
+# real client IP for the firewall ban logic. Never list a network here that
+# you do not fully control, or clients can ban arbitrary IPs.
+trusted_proxies:
+  - 172.20.0.2
+
+db:
+  # SQLite file on the authn_data volume.
+  dsn: /app/data/authn.db
+
+oidc:
+  title: CaddyPAW
+  issuer: https://auth.example.com/oauth2
+  # RSA 256 private key, generate with: openssl genrsa 2048
+  private_key_pem: |
+    -----BEGIN RSA PRIVATE KEY-----
+    MIIEowIBAAK...
+    -----END RSA PRIVATE KEY-----
+  sso:
+    google:
+      # Google login is mandatory. Create an OAuth client at
+      # https://console.cloud.google.com/apis/credentials.
+      client_id: your-google-login-client-id
+      client_secret: your-google-login-client-secret
+      redirect_uri: https://auth.example.com/sso/google/callback
+
+firewall:
+  # Replace with the provider in front of your network: ros, opn or pf.
+  provider: opn
+  provider_ip: 10.0.0.1
+  provider_user: user
+  provider_password: pass
+  list_uuid: list id
+  ban_minutes: 60
+  # Never ban the gateway itself or localhost.
+  whitelist:
+    - 172.20.0.2
+    - 127.0.0.1
+    - ::1
+  forgivable:
+    duration_in_minute: 3
+    count: 3
+
+  # GeoLite2 databases, mounted at /app/geoip (see ../docker-compose.yaml).
+  city_db_file: /app/geoip/GeoLite2-City.mmdb
+  updated_city_db_file: /app/geoip/GeoLite2-City-updated.mmdb
+  asn_db_file: /app/geoip/GeoLite2-ASN.mmdb
+  updated_asn_db_file: /app/geoip/GeoLite2-ASN-updated.mmdb

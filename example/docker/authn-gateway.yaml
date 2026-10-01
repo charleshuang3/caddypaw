@@ -1,0 +1,19 @@
+# Gateway configuration, loaded by Caddy through the authn_yaml_file global
+# option (/config/authn.yaml in the container). This is NOT the authn server
+# configuration: that one is docker/authn-server.yaml.
+
+issuer: https://auth.example.com/oauth2
+auth_url: https://auth.example.com/oauth2/authorize
+token_url: https://auth.example.com/oauth2/token
+non_oidc_userinfo_url: https://auth.example.com/user/info
+
+# authn's firewall handler port. It has no authentication, so it is only
+# reachable over the internal Docker network.
+firewall_url: http://authn:8082/
+
+# Public half of oidc.private_key_pem from docker/authn-server.yaml:
+#   openssl rsa -in private.pem -pubout
+public_key_pem: |
+  -----BEGIN PUBLIC KEY-----
+  MIIBI...
+  -----END PUBLIC KEY-----
