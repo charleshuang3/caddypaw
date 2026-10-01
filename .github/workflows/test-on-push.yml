@@ -43,3 +43,7 @@ jobs:
       - name: Run tests
         run: |
           go test -v ./...
+
+      - name: Run tests with the race detector
+        run: |
+          CGO_ENABLED=1 go test -race ./...

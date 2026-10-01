@@ -20,6 +20,7 @@ Request flow being protected: client → Caddy (`paw_auth`) → upstream. On aut
 just lint         # golangci-lint run ./... (must be clean)
 just build        # go build ./...
 just test         # go test ./... (includes ./test/e2e)
+just test-race    # CGO_ENABLED=1 go test -race ./... (also run in CI)
 just fmt          # goimports -w -local "github.com/charleshuang3/caddypaw" .
 just fmt-check    # formatting gate used by CI
 just build-caddy  # xcaddy build ... -> bin/caddy
