@@ -88,6 +88,20 @@ func classifyTokenError(err error) bool {
 // 2. redirect the user to pre-auth url.
 func (a *authModule) handleDefaultCallback(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
 	q := r.URL.Query()
+
+	// An authorize request can be rejected before any code is issued: the authn
+	// server then redirects back here with the standard OAuth2 error
+	// parameters (RFC 6749 §4.1.2.1). Report it and let the client retry; this
+	// is not an attack, so it must not reach the firewall, and there is no new
+	// auth flow to start (which could loop).
+	if authErr := q.Get("error"); authErr != "" {
+		description := q.Get("error_description")
+		a.logger.Error("authorize request rejected by authn",
+			zap.String("error", authErr), zap.String("error_description", description))
+		return http.StatusBadRequest, nil, caddyhttp.Error(http.StatusBadRequest,
+			fmt.Errorf("authorization error: %s: %s", authErr, description))
+	}
+
 	code := q.Get("code")
 	if code == "" {
 		a.logErr(r, "callback: no auth code")

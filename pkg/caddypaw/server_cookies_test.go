@@ -711,6 +711,33 @@ func TestCheckServerCookies_refreshToken_InvalidGrant(t *testing.T) {
 	assert.Contains(t, w.Header().Get("Location"), "/oauth2/authorize")
 }
 
+// TestCheckServerCookies_callback_AuthorizeError verifies that an authorize
+// request rejected by authn (RFC 6749 §4.1.2.1) is answered with an error and
+// neither redirects nor reports the client's IP to the firewall.
+// The regression it guards: the callback used to see a missing code and report
+// the client as a hacker.
+func TestCheckServerCookies_callback_AuthorizeError(t *testing.T) {
+	mockServer, testServer := setupMockAuthnServer(t)
+	a := newAuthModule(t, testServer, authTypeServerCookies)
+	a.authnConfig.FirewallURL = testServer.URL
+
+	q := url.Values{}
+	q.Set("error", "invalid_scope")
+	q.Set("error_description", "Invalid scope")
+	q.Set("state", "some-state")
+	r := httptest.NewRequest(http.MethodGet, defaultCallbackURL+"?"+q.Encode(), nil)
+
+	w := httptest.NewRecorder()
+	code, _, err := a.checkServerCookies(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, code)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid_scope")
+	assert.Empty(t, w.Header().Get("Location"), "must not redirect on a rejected authorize request")
+	assert.Empty(t, mockServer.firewallRequests, "must not report a rejected authorize request to the firewall")
+	assert.Empty(t, mockServer.tokenRequests, "must not exchange a code")
+}
+
 func TestCheckServerCookies_withAccessToken(t *testing.T) {
 	_, testServer := setupMockAuthnServer(t)
 	a := newAuthModule(t, testServer, authTypeServerCookies)
