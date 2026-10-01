@@ -14,7 +14,7 @@ build:
 # Build caddy binary with the caddypaw plugin using xcaddy
 build-caddy:
     mkdir -p bin
-    xcaddy build {{CADDY_VERSION}} \
+    xcaddy build {{ CADDY_VERSION }} \
         --with github.com/charleshuang3/caddypaw/pkg/caddypaw \
         --replace github.com/charleshuang3/caddypaw=. \
         --output bin/caddy
@@ -26,6 +26,10 @@ lint:
 # Run tests
 test:
     go test -v ./...
+
+# Run tests with the race detector (requires cgo)
+test-race:
+    CGO_ENABLED=1 go test -race ./...
 
 # Run go mod tidy
 tidy:
