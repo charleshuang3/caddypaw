@@ -10,7 +10,7 @@ CADDY_VERSION := "v2.11.4"
 # Build project with xcaddy
 build:
     mkdir -p bin
-    xcaddy build {{CADDY_VERSION}} --with github.com/charleshuang3/caddypaw=. --output bin/caddy
+    xcaddy build {{CADDY_VERSION}} --with github.com/charleshuang3/caddypaw/pkg/caddypaw=./pkg/caddypaw --output bin/caddy
 
 # Run linters using golangci-lint
 lint:

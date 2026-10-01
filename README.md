@@ -16,7 +16,7 @@ To install the CaddyPAW plugin, you can use the `xcaddy` tool. If you don't have
 Once you have `xcaddy`, you can build Caddy with the CaddyPAW plugin by running:
 
 ```bash
-xcaddy build --with github.com/charleshuang3/caddypaw
+xcaddy build --with github.com/charleshuang3/caddypaw/pkg/caddypaw=./pkg/caddypaw
 ```
 
 This will produce a new Caddy binary that includes the CaddyPAW plugin.

@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/charleshuang3/caddypaw/internal/config"
-	"github.com/charleshuang3/caddypaw/internal/testdata"
+	"github.com/charleshuang3/caddypaw/pkg/caddypaw/testdata"
 )
 
 func TestAuthUnmarshalCaddyfile(t *testing.T) {
@@ -331,7 +331,7 @@ func TestAuthConfigValidate(t *testing.T) {
 
 func TestAuthProvision(t *testing.T) {
 	caddyfileInput := `{
-	authn_yaml_file internal/testdata/test.yaml
+	authn_yaml_file testdata/test.yaml
 }
 
 example.com {
@@ -370,7 +370,7 @@ example.com {
 func TestAuthDirective(t *testing.T) {
 	caddyfileInput := `{
 	order paw_auth before basic_auth
-	authn_yaml_file internal/testdata/test.yaml
+	authn_yaml_file testdata/test.yaml
 }
 
 example.com {

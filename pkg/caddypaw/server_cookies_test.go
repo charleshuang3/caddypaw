@@ -16,7 +16,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/charleshuang3/caddypaw/internal/config"
-	"github.com/charleshuang3/caddypaw/internal/testdata"
+	"github.com/charleshuang3/caddypaw/pkg/caddypaw/testdata"
 )
 
 func validUser() *userInfo {

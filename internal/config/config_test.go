@@ -6,11 +6,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/charleshuang3/caddypaw/internal/testdata"
+	"github.com/charleshuang3/caddypaw/pkg/caddypaw/testdata"
 )
 
 func TestLoadFromFile(t *testing.T) {
-	conf, err := LoadFromFile(`../testdata/test.yaml`)
+	conf, err := LoadFromFile(`../../pkg/caddypaw/testdata/test.yaml`)
 	require.NoError(t, err)
 
 	assert.Equal(t, &AuthnConfig{

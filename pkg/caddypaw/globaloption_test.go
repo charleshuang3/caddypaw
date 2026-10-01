@@ -11,12 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/charleshuang3/caddypaw/internal/config"
-	"github.com/charleshuang3/caddypaw/internal/testdata"
+	"github.com/charleshuang3/caddypaw/pkg/caddypaw/testdata"
 )
 
 func TestParseGlobalOptionAuthnYAMLFilePath(t *testing.T) {
 	caddyfileInput := `{
-	authn_yaml_file internal/testdata/test.yaml
+	authn_yaml_file testdata/test.yaml
 }
 
 example.com {

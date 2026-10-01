@@ -15,7 +15,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/charleshuang3/caddypaw/internal/config"
-	"github.com/charleshuang3/caddypaw/internal/testdata"
+	"github.com/charleshuang3/caddypaw/pkg/caddypaw/testdata"
 )
 
 type mockAuthnServer struct {
