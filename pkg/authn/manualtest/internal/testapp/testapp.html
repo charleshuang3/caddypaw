@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Test App</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+        }
+
+        .token-info {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+
+        .token-info h3 {
+            margin-top: 0;
+        }
+
+        .actions button {
+            margin-right: 10px;
+            padding: 8px 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Token Information</h1>
+
+    <div class="token-info">
+        <h3>Access Token</h3>
+        <p><strong>Subject:</strong> {{ .AccessTokenSubject }}</p>
+        <p><strong>Email:</strong> {{ .AccessTokenEmail }}</p>
+        <p><strong>Expiry:</strong> {{ .AccessTokenExpiry }}</p>
+        <p><a href="https://jwt.io/#id_token={{ .RawAccessToken }}" target="_blank">View Raw Access Token on jwt.io</a></p>
+    </div>
+
+    <div class="token-info">
+        <h3>Refresh Token</h3>
+        <p><strong>Subject:</strong> {{ .RefreshTokenSubject }}</p>
+        <p><strong>Expiry:</strong> {{ .RefreshTokenExpiry }}</p>
+        <p><a href="https://jwt.io/#id_token={{ .RawRefreshToken }}" target="_blank">View Raw Refresh Token on jwt.io</a></p>
+    </div>
+
+    <div class="actions">
+        <button onclick="cleanCookies()">Clean Cookies</button>
+        <button onclick="refreshToken()">Refresh Token</button>
+    </div>
+
+    <script>
+        async function cleanCookies() {
+            await fetch('/cleancookies');
+            alert('Cookies cleaned. Please refresh the page.');
+            window.location.reload();
+        }
+
+        async function refreshToken() {
+            const response = await fetch('/refreshtoken');
+            if (response.ok) {
+                window.location.reload();
+            } else {
+                alert('Failed to refresh token.');
+            }
+        }
+    </script>
+</body>
+
+</html>

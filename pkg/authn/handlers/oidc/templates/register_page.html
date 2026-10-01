@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register Page</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .register-container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 450px; /* Adjusted for more fields */
+            text-align: center;
+            box-sizing: border-box;
+        }
+
+        h2 {
+            margin-bottom: 25px;
+            color: #333;
+            font-size: 1.8em;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+            text-align: left;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
+        input[type="text"],
+        input[type="email"],
+        input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 1em;
+        }
+
+        .password-hint {
+            font-size: 0.8em;
+            color: #777;
+            margin-top: 4px;
+            display: block;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #28a745; /* Green for register */
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1.1em;
+            transition: background-color 0.3s ease;
+            box-sizing: border-box;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            background-color: #218838;
+        }
+
+        .error-message {
+            color: red;
+            font-size: 0.9em;
+            margin-top: 5px;
+            display: none; /* Hidden by default */
+        }
+        
+        .login-link {
+            display: block;
+            margin-top: 20px;
+            font-size: 0.9em;
+            color: #007bff;
+            text-decoration: none;
+        }
+
+        .login-link:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 480px) {
+            .register-container {
+                padding: 20px;
+            }
+
+            h2 {
+                font-size: 1.5em;
+            }
+
+            input[type="text"],
+            input[type="email"],
+            input[type="password"],
+            button {
+                padding: 10px;
+                font-size: 1em;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="register-container">
+        <h2>{{.Title}}</h2>
+        <form id="registerForm" action="/user/register" method="post">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required>
+                <span id="usernameError" class="error-message">Username must be 4-12 characters long and can only contain letters, numbers, hyphens, and underscores.</span>
+            </div>
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" required>
+                <span id="emailError" class="error-message">Please enter a valid email address.</span>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+                <span class="password-hint">Must be 8+ characters, including 1 number, 1 lowercase, 1 uppercase, and 1 special character.</span>
+                <span id="passwordError" class="error-message">Password does not meet complexity requirements.</span>
+            </div>
+            <div class="form-group">
+                <label for="invitation_code">Invitation Code</label>
+                <input type="text" id="invitation_code" name="invitation_code" required>
+                <span id="invitationCodeError" class="error-message">Invitation code cannot be empty.</span>
+            </div>
+            
+            <input type="hidden" name="state" value="{{.State}}">
+
+            <button type="submit">Register</button>
+        </form>
+    </div>
+
+    <script>
+        document.getElementById('registerForm').addEventListener('submit', function (event) {
+            let isValid = true;
+
+            // Username validation
+            const usernameInput = document.getElementById('username');
+            const usernameError = document.getElementById('usernameError');
+            const usernameRegex = /^[a-zA-Z0-9-_]{4,12}$/;
+            if (!usernameRegex.test(usernameInput.value)) {
+                usernameError.style.display = 'block';
+                isValid = false;
+            } else {
+                usernameError.style.display = 'none';
+            }
+
+            // Email validation
+            const emailInput = document.getElementById('email');
+            const emailError = document.getElementById('emailError');
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(emailInput.value)) {
+                emailError.style.display = 'block';
+                isValid = false;
+            } else {
+                emailError.style.display = 'none';
+            }
+
+            // Password validation
+            const passwordInput = document.getElementById('password');
+            const passwordError = document.getElementById('passwordError');
+            const passwordValue = passwordInput.value;
+            
+            function validatePasswordJS(password) {
+                const allowedSpecialChars = "!@#$%^&*()_+\\-=[]{};':\"\\\\|,.<>/?";
+                if (password.length < 8) {
+                    return "Password must be at least 8 characters long.";
+                }
+
+                let hasNumber = false;
+                let hasLower = false;
+                let hasUpper = false;
+                let hasSpecial = false;
+
+                for (let i = 0; i < password.length; i++) {
+                    const char = password[i];
+                    if (char >= '0' && char <= '9') {
+                        hasNumber = true;
+                    } else if (char >= 'a' && char <= 'z') {
+                        hasLower = true;
+                    } else if (char >= 'A' && char <= 'Z') {
+                        hasUpper = true;
+                    } else if (allowedSpecialChars.includes(char)) {
+                        hasSpecial = true;
+                    } else {
+                        return "Password contains disallowed characters.";
+                    }
+                }
+
+                if (!hasNumber) {
+                    return "Password must contain at least one number.";
+                }
+                if (!hasLower) {
+                    return "Password must contain at least one lowercase letter.";
+                }
+                if (!hasUpper) {
+                    return "Password must contain at least one uppercase letter.";
+                }
+                if (!hasSpecial) {
+                    return "Password must contain at least one special character.";
+                }
+                return null; // Indicates password is valid
+            }
+
+            const passwordValidationMessage = validatePasswordJS(passwordValue);
+            if (passwordValidationMessage) {
+                passwordError.textContent = passwordValidationMessage;
+                passwordError.style.display = 'block';
+                isValid = false;
+            } else {
+                passwordError.style.display = 'none';
+            }
+
+            // Invitation code validation
+            const invitationCodeInput = document.getElementById('invitation_code');
+            const invitationCodeError = document.getElementById('invitationCodeError');
+            if (invitationCodeInput.value.trim() === '') {
+                invitationCodeError.style.display = 'block';
+                isValid = false;
+            } else {
+                invitationCodeError.style.display = 'none';
+            }
+
+            if (!isValid) {
+                event.preventDefault(); // Prevent form submission if validation fails
+            }
+        });
+    </script>
+</body>
+</html>

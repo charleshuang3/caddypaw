@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unauthorized</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .error-container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+            box-sizing: border-box;
+        }
+
+        .red-cross {
+            font-size: 3em;
+            color: #dc3545;
+            margin-bottom: 20px;
+        }
+
+        .error-message {
+            color: #000000;
+            font-size: 1.1em;
+            margin-top: 15px;
+        }
+
+        @media (max-width: 480px) {
+            .error-container {
+                padding: 20px;
+            }
+
+            .error-message {
+                font-size: 1em;
+            }
+
+            .red-cross {
+                font-size: 2.5em;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="error-container">
+        <div class="red-cross">&#10060;</div>
+        {{if .ErrorMessage}}
+        <div class="error-message">{{.ErrorMessage}}</div>
+        {{else}}
+        <div class="error-message">An error occurred.</div>
+        {{end}}
+    </div>
+</body>
+
+</html>

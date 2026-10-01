@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login Page</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        /* Login Container Styling */
+        .login-container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 450px;
+            text-align: center;
+            box-sizing: border-box;
+        }
+
+        h2 {
+            margin-bottom: 25px;
+            color: #333;
+            font-size: 1.8em;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+            text-align: left;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 1em;
+        }
+
+        /* Standard Button Styling */
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1.1em;
+            transition: background-color 0.3s ease;
+            box-sizing: border-box;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        /* Separator Styling */
+        .or-divider {
+            margin: 25px 0;
+            color: #aaa;
+            font-size: 0.9em;
+        }
+
+        /* Google Login Button Styling */
+        .google-login-button {
+            width: 100%;
+            padding: 12px;
+            background-color: white;
+            color: #333;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1.1em;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
+        }
+
+        .google-login-button img {
+            margin-right: 10px;
+            width: 20px;
+            height: 20px;
+        }
+
+        .google-login-button:hover {
+            background-color: #f0f0f0;
+            border-color: #bbb;
+        }
+
+        /* Responsive Adjustments */
+        @media (max-width: 480px) {
+            .login-container {
+                padding: 20px;
+            }
+
+            h2 {
+                font-size: 1.5em;
+            }
+
+            input[type="text"],
+            input[type="password"],
+            button,
+            .google-login-button {
+                padding: 10px;
+                font-size: 1em;
+            }
+        }
+
+        .register-button {
+            margin-top: 10px;
+            background-color: #28a745;
+            color: white;
+            text-decoration: none;
+            display: inline-block;
+            padding: 12px;
+            border-radius: 4px;
+            font-size: 1.1em;
+            transition: background-color 0.3s ease;
+            box-sizing: border-box;
+            width: 100%;
+        }
+
+        .register-button:hover {
+            background-color: #218838;
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-container">
+        <h2>{{.Title}}</h2>
+        {{if .AllowPasswordLogin}}
+        <form id="loginForm" action="/user/login" method="post">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <input type="hidden" name="state" value="{{.State}}">
+
+            <button type="submit">Login</button>
+        </form>
+
+        <a href="/user/register?state={{.State}}" class="register-button">Register</a>
+        {{end}}
+
+        {{if and .AllowPasswordLogin .AllowGoogleLogin}}
+        <div class="or-divider">- OR -</div>
+        {{end}}
+
+        {{if .AllowGoogleLogin}}
+        <a href="{{.GoogleLoginURL}}" class="google-login-button">
+            <img src="/static/google-logo.png" alt="Google logo"> Sign in with Google (Registered Only)
+        </a>
+        {{end}}
+    </div>
+
+    {{if .AllowPasswordLogin}}
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', function (event) {
+            var username = document.getElementById('username').value.trim();
+            var password = document.getElementById('password').value.trim();
+
+            if (username === '' || password === '') {
+                alert('Username and password cannot be empty.');
+                // Prevent form submission
+                event.preventDefault();
+            }
+        });
+    </script>
+    {{end}}
+</body>
+
+</html>
