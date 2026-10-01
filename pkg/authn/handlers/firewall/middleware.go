@@ -12,6 +12,7 @@ import (
 	fw "github.com/charleshuang3/caddypaw/pkg/firewall"
 	"github.com/charleshuang3/caddypaw/pkg/firewall/gcplog"
 	"github.com/charleshuang3/caddypaw/pkg/firewall/ipgeo"
+	"github.com/charleshuang3/caddypaw/pkg/firewall/memory"
 	"github.com/charleshuang3/caddypaw/pkg/firewall/opn"
 	"github.com/charleshuang3/caddypaw/pkg/firewall/pf"
 	"github.com/charleshuang3/caddypaw/pkg/firewall/ros"
@@ -47,7 +48,7 @@ type FirewallConfig struct {
 }
 
 var (
-	supportedProviders = []string{"none", "ros", "opn", "pf"}
+	supportedProviders = []string{"none", "memory", "ros", "opn", "pf"}
 )
 
 const (
@@ -63,7 +64,7 @@ func (c *FirewallConfig) Validate() {
 		logger.Fatal().Msgf("Provider %s is not supported", c.Provider)
 	}
 
-	if c.Provider != "none" {
+	if c.Provider != "none" && c.Provider != "memory" {
 		if c.ProviderIP == "" {
 			logger.Fatal().Msg("ProviderIP is missing")
 		}
@@ -117,9 +118,21 @@ func (c *FirewallConfig) applyDefault() {
 type Firewall struct {
 	fw   *fw.Firewall
 	conf *FirewallConfig
+
+	// memFW is non-nil only when provider is "memory". It records all ban
+	// events in memory, mainly for tests and E2E assertions.
+	memFW *memory.Firewall
+}
+
+// MemoryFirewall returns the underlying memory firewall when provider is
+// "memory", otherwise nil.
+func (f *Firewall) MemoryFirewall() *memory.Firewall {
+	return f.memFW
 }
 
 func New(conf *FirewallConfig) *Firewall {
+	f := &Firewall{}
+
 	var firewallProvider fw.IFirewall
 	switch conf.Provider {
 	case "ros":
@@ -131,6 +144,10 @@ func New(conf *FirewallConfig) *Firewall {
 	case "opn":
 		firewallProvider = opn.New(
 			conf.ProviderIP, conf.ProviderUser, conf.ProviderPassword, conf.ListUUID)
+	case "memory":
+		memFW := memory.New()
+		f.memFW = memFW
+		firewallProvider = memFW
 	default:
 		// keep firewallProvider nil which means no block on firewall
 	}
@@ -156,7 +173,7 @@ func New(conf *FirewallConfig) *Firewall {
 		logger.Fatal().Err(err).Msg("Failed to create firewall middleware")
 	}
 
-	fw := fw.New(
+	f.fw = fw.New(
 		conf.Whitelist,
 		firewallProvider,
 		fwlogger,
@@ -167,10 +184,8 @@ func New(conf *FirewallConfig) *Firewall {
 			BanInMinute: int(conf.BanMinutes),
 		})
 
-	return &Firewall{
-		fw:   fw,
-		conf: conf,
-	}
+	f.conf = conf
+	return f
 }
 
 func (f *Firewall) Middleware() gin.HandlerFunc {
