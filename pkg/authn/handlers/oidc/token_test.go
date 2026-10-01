@@ -354,29 +354,63 @@ func TestHandleTokenAuthorizationCode_Success(t *testing.T) {
 
 func TestHandleTokenAuthorizationCode_ClientAuthMethods(t *testing.T) {
 	tests := []struct {
-		name            string
-		useBasicAuth    bool
-		conflictBasic   bool
-		expectedStatus  int
-		expectedSuccess bool
+		name           string
+		basicID        string
+		basicSecret    string
+		formID         string
+		formSecret     string
+		authCodeClient string
+		expectedStatus int
+		expectedError  string
 	}{
 		{
-			name:            "client_secret_basic",
-			useBasicAuth:    true,
-			expectedStatus:  http.StatusOK,
-			expectedSuccess: true,
+			name:           "client_secret_basic only",
+			basicID:        "existing-client",
+			basicSecret:    "correct-secret",
+			expectedStatus: http.StatusOK,
 		},
 		{
-			name:            "basic and post credentials agree",
-			useBasicAuth:    true,
-			expectedStatus:  http.StatusOK,
-			expectedSuccess: true,
+			name:           "client_secret_post only",
+			formID:         "existing-client",
+			formSecret:     "correct-secret",
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "basic and post credentials agree",
+			basicID:        "existing-client",
+			basicSecret:    "correct-secret",
+			formID:         "existing-client",
+			formSecret:     "correct-secret",
+			expectedStatus: http.StatusOK,
 		},
 		{
 			name:           "basic and post credentials conflict",
-			useBasicAuth:   true,
-			conflictBasic:  true,
+			basicID:        "existing-client",
+			basicSecret:    "correct-secret",
+			formID:         "existing-client",
+			formSecret:     "wrong-secret",
 			expectedStatus: http.StatusBadRequest,
+			expectedError:  "invalid_request",
+		},
+		{
+			name:           "basic with wrong secret",
+			basicID:        "existing-client",
+			basicSecret:    "wrong-secret",
+			expectedStatus: http.StatusUnauthorized,
+			expectedError:  "invalid_client",
+		},
+		{
+			name:           "basic with client not in database",
+			basicID:        "unknown-client",
+			basicSecret:    "correct-secret",
+			authCodeClient: "unknown-client",
+			expectedStatus: http.StatusUnauthorized,
+			expectedError:  "invalid_client",
+		},
+		{
+			name:           "no credentials",
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "invalid_request",
 		},
 	}
 
@@ -385,8 +419,12 @@ func TestHandleTokenAuthorizationCode_ClientAuthMethods(t *testing.T) {
 			provider, _, router := setupTestProviderForTokenRequest(t)
 
 			authCodeValue := "valid-code"
+			authCodeClient := tt.authCodeClient
+			if authCodeClient == "" {
+				authCodeClient = "existing-client"
+			}
 			provider.authCodeStorage.Set(authCodeValue, &storage.AuthCode{
-				ClientID: "existing-client",
+				ClientID: authCodeClient,
 				UserID:   1,
 				Scopes:   []string{"openid"},
 			})
@@ -395,37 +433,179 @@ func TestHandleTokenAuthorizationCode_ClientAuthMethods(t *testing.T) {
 				"grant_type": {"authorization_code"},
 				"code":       {authCodeValue},
 			}
-
-			if tt.useBasicAuth {
-				secret := "correct-secret"
-				if tt.conflictBasic {
-					// Same client_id in form and Basic header but different secret.
-					formData.Set("client_id", "existing-client")
-					formData.Set("client_secret", "wrong-secret")
-				} else {
-					// Provide identical values in both places.
-					formData.Set("client_id", "existing-client")
-					formData.Set("client_secret", secret)
-				}
+			if tt.formID != "" {
+				formData.Set("client_id", tt.formID)
+				formData.Set("client_secret", tt.formSecret)
 			}
 
 			req, err := http.NewRequest(http.MethodPost, "/oauth2/token", strings.NewReader(formData.Encode()))
 			require.NoError(t, err)
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			if tt.useBasicAuth {
-				req.SetBasicAuth("existing-client", "correct-secret")
+			if tt.basicID != "" {
+				req.SetBasicAuth(tt.basicID, tt.basicSecret)
 			}
 
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
 
 			assert.Equal(t, tt.expectedStatus, rec.Code, "Body: %s", rec.Body.String())
-			if tt.expectedSuccess {
-				var resp handleTokenResponse
-				err = json.Unmarshal(rec.Body.Bytes(), &resp)
-				require.NoError(t, err)
-				assert.NotEmpty(t, resp.AccessToken)
+			if tt.expectedError != "" {
+				assertTokenError(t, rec, tt.expectedError)
+				return
 			}
+
+			var resp handleTokenResponse
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+			assert.NotEmpty(t, resp.AccessToken)
+		})
+	}
+}
+
+// TestHandleTokenAuthorizationCode_BasicCredentialSpellings verifies that both
+// spellings of client_secret_basic credentials are accepted: the form-urlencoded
+// one that RFC 6749 §2.3.1 mandates (golang.org/x/oauth2 sends it) and the raw
+// one (curl sends it).
+func TestHandleTokenAuthorizationCode_BasicCredentialSpellings(t *testing.T) {
+	const (
+		clientID     = "client id+1"
+		clientSecret = "s3cr3t+="
+	)
+
+	tests := []struct {
+		name   string
+		encode bool
+	}{
+		{name: "form-urlencoded credentials", encode: true},
+		{name: "raw credentials", encode: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider, db, router := setupTestProviderForTokenRequest(t)
+
+			require.NoError(t, db.Create(&models.Client{
+				ClientID:        clientID,
+				Secret:          clientSecret,
+				AccessTokenTTL:  600,
+				RefreshTokenTTL: 3600,
+			}).Error)
+
+			authCodeValue := "spelled-code"
+			provider.authCodeStorage.Set(authCodeValue, &storage.AuthCode{
+				ClientID: clientID,
+				UserID:   1,
+				Scopes:   []string{"openid"},
+			})
+
+			formData := url.Values{
+				"grant_type": {"authorization_code"},
+				"code":       {authCodeValue},
+			}
+			req, err := http.NewRequest(http.MethodPost, "/oauth2/token", strings.NewReader(formData.Encode()))
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			id, secret := clientID, clientSecret
+			if tt.encode {
+				id, secret = url.QueryEscape(clientID), url.QueryEscape(clientSecret)
+			}
+			req.SetBasicAuth(id, secret)
+
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			require.Equal(t, http.StatusOK, rec.Code, "Body: %s", rec.Body.String())
+			var resp handleTokenResponse
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+			assert.NotEmpty(t, resp.AccessToken)
+		})
+	}
+}
+
+func TestParseClientCredentials(t *testing.T) {
+	tests := []struct {
+		name             string
+		form             url.Values
+		basicID          string
+		basicSecret      string
+		registeredID     string
+		registeredSecret string
+		wantErr          string
+	}{
+		{
+			name:             "form credentials",
+			form:             url.Values{"client_id": {"id"}, "client_secret": {"secret"}},
+			registeredID:     "id",
+			registeredSecret: "secret",
+		},
+		{
+			name:             "basic credentials as sent",
+			basicID:          "id",
+			basicSecret:      "s+cret",
+			registeredID:     "id",
+			registeredSecret: "s+cret",
+		},
+		{
+			name:             "basic credentials form-urlencoded",
+			basicID:          "client%20id",
+			basicSecret:      "s%2Bcret",
+			registeredID:     "client id",
+			registeredSecret: "s+cret",
+		},
+		{
+			name:             "basic wins and agrees with form",
+			basicID:          "client%20id",
+			basicSecret:      "s%2Bcret",
+			form:             url.Values{"client_id": {"client id"}, "client_secret": {"s+cret"}},
+			registeredID:     "client id",
+			registeredSecret: "s+cret",
+		},
+		{
+			name:        "conflicting client id",
+			basicID:     "id",
+			basicSecret: "secret",
+			form:        url.Values{"client_id": {"other"}, "client_secret": {"secret"}},
+			wantErr:     "conflicting client credentials",
+		},
+		{
+			name:        "conflicting client secret",
+			basicID:     "id",
+			basicSecret: "secret",
+			form:        url.Values{"client_id": {"id"}, "client_secret": {"other"}},
+			wantErr:     "conflicting client credentials",
+		},
+		{
+			name:    "no credentials",
+			wantErr: "missing client credentials",
+		},
+		{
+			name:    "form without client_secret",
+			form:    url.Values{"client_id": {"id"}},
+			wantErr: "missing client_secret",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/oauth2/token", strings.NewReader(tt.form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if tt.basicID != "" {
+				req.SetBasicAuth(tt.basicID, tt.basicSecret)
+			}
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = req
+
+			credentials, err := parseClientCredentials(c)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			_, ok := credentials.matchClientID(tt.registeredID)
+			assert.True(t, ok, "expected %q to be accepted as the client id", tt.registeredID)
+			assert.True(t, credentials.secretMatches(tt.registeredSecret), "expected the client secret to match")
 		})
 	}
 }

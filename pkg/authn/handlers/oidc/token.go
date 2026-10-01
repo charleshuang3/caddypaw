@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -49,34 +50,102 @@ type handleTokenAuthorizationCodeParams struct {
 	Code string `form:"code" binding:"required"`
 	// RedirectURI is optional for backward compatibility; when present it must
 	// match the redirect_uri of the authorization request (RFC 6749 §4.1.3).
-	RedirectURI  string `form:"redirect_uri"`
-	ClientID     string
-	ClientSecret string
+	RedirectURI string `form:"redirect_uri"`
 }
 
-// clientCredentials extracts client_id/client_secret for client
-// authentication. Both client_secret_post (form values, RFC 6749 §2.3.1) and
-// client_secret_basic (HTTP Basic) are supported; when both are present they
-// must agree, otherwise the request is rejected.
-func clientCredentials(c *gin.Context) (clientID, clientSecret string, err error) {
-	formID := c.PostForm("client_id")
-	formSecret := c.PostForm("client_secret")
+// clientCredentials are the credentials a client presented at the token
+// endpoint, either as form values (client_secret_post) or in the Authorization
+// header (client_secret_basic).
+//
+// RFC 6749 §2.3.1 requires the client id and secret to be form-urlencoded
+// before they are put into the Authorization header. Clients disagree about
+// it: golang.org/x/oauth2 escapes them, curl does not. Both spellings are
+// therefore accepted, which is why each credential carries candidates.
+type clientCredentials struct {
+	clientIDs     []string
+	clientSecrets []string
+}
 
-	basicID, basicSecret, hasBasic := c.Request.BasicAuth()
-
-	switch {
-	case hasBasic && formID != "" && (formID != basicID || formSecret != basicSecret):
-		return "", "", fmt.Errorf("conflicting client credentials")
-	case hasBasic:
-		return basicID, basicSecret, nil
-	case formID != "":
-		if formSecret == "" {
-			return "", "", fmt.Errorf("missing client_secret")
-		}
-		return formID, formSecret, nil
-	default:
-		return "", "", fmt.Errorf("missing client credentials")
+// credentialsFromForm reads client_secret_post credentials (RFC 6749 §2.3.1).
+func credentialsFromForm(c *gin.Context) (clientCredentials, error) {
+	clientID := c.PostForm("client_id")
+	if clientID == "" {
+		return clientCredentials{}, errors.New("missing client credentials")
 	}
+
+	clientSecret := c.PostForm("client_secret")
+	if clientSecret == "" {
+		return clientCredentials{}, errors.New("missing client_secret")
+	}
+
+	return clientCredentials{
+		clientIDs:     []string{clientID},
+		clientSecrets: []string{clientSecret},
+	}, nil
+}
+
+// credentialsFromHeader reads client_secret_basic credentials.
+func credentialsFromHeader(clientID, clientSecret string) clientCredentials {
+	return clientCredentials{
+		clientIDs:     spellings(clientID),
+		clientSecrets: spellings(clientSecret),
+	}
+}
+
+// spellings returns the accepted spellings of a value sent in the
+// Authorization header: the value as sent, plus its form-urlencoded-decoded
+// form when that differs.
+func spellings(value string) []string {
+	decoded, err := url.QueryUnescape(value)
+	if err != nil || decoded == value {
+		return []string{value}
+	}
+	return []string{value, decoded}
+}
+
+// matchClientID returns the spelling that is accepted as one of registered,
+// which holds the client ids the credentials are expected to identify: the
+// client id stored with the authorization code, or the audience of a refresh
+// token.
+func (cc clientCredentials) matchClientID(registered ...string) (string, bool) {
+	for _, candidate := range cc.clientIDs {
+		if slices.Contains(registered, candidate) {
+			return candidate, true
+		}
+	}
+	return "", false
+}
+
+// secretMatches reports whether any accepted spelling equals registered.
+func (cc clientCredentials) secretMatches(registered ...string) bool {
+	for _, candidate := range cc.clientSecrets {
+		if slices.Contains(registered, candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+// parseClientCredentials extracts the client credentials of a token request. HTTP
+// Basic (RFC 6749 §2.3.1) takes precedence over form values; when both are
+// present they must agree, otherwise the request is rejected.
+func parseClientCredentials(c *gin.Context) (clientCredentials, error) {
+	basicID, basicSecret, hasBasic := c.Request.BasicAuth()
+	if !hasBasic {
+		return credentialsFromForm(c)
+	}
+
+	credentials := credentialsFromHeader(basicID, basicSecret)
+
+	// Form credentials may be present as well, in which case they must
+	// describe the same client. A form without client_secret is ignored.
+	if form, err := credentialsFromForm(c); err == nil {
+		if _, ok := credentials.matchClientID(form.clientIDs...); !ok || !credentials.secretMatches(form.clientSecrets...) {
+			return clientCredentials{}, errors.New("conflicting client credentials")
+		}
+	}
+
+	return credentials, nil
 }
 
 func (o *OpenIDProvider) handleTokenAuthorizationCode(c *gin.Context) {
@@ -87,8 +156,7 @@ func (o *OpenIDProvider) handleTokenAuthorizationCode(c *gin.Context) {
 		return
 	}
 
-	var err error
-	params.ClientID, params.ClientSecret, err = clientCredentials(c)
+	credentials, err := parseClientCredentials(c)
 	if err != nil {
 		responseTokenError(c, http.StatusBadRequest, "invalid_request", err.Error())
 		return
@@ -103,7 +171,8 @@ func (o *OpenIDProvider) handleTokenAuthorizationCode(c *gin.Context) {
 
 	o.authCodeStorage.Delete(params.Code)
 
-	if authCode.ClientID != params.ClientID {
+	clientID, ok := credentials.matchClientID(authCode.ClientID)
+	if !ok {
 		// This should never happen unless the requester is cheating.
 		responseTokenError(c, http.StatusBadRequest, "invalid_grant", "Invalid client ID")
 		return
@@ -115,8 +184,8 @@ func (o *OpenIDProvider) handleTokenAuthorizationCode(c *gin.Context) {
 		return
 	}
 
-	// Fetch client from database using clientID
-	client, err := storage.GetClientByID(o.db, params.ClientID)
+	// Fetch client from database using the client id stored with the auth code
+	client, err := storage.GetClientByID(o.db, clientID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// This should never happen unless the requester is cheating.
@@ -129,7 +198,7 @@ func (o *OpenIDProvider) handleTokenAuthorizationCode(c *gin.Context) {
 		}
 	}
 
-	if client.Secret != params.ClientSecret {
+	if !credentials.secretMatches(client.Secret) {
 		// This should never happen unless the requester is cheating.
 		responseTokenError(c, http.StatusUnauthorized, "invalid_client", "Invalid client secret")
 		return
@@ -159,8 +228,6 @@ func (o *OpenIDProvider) handleTokenAuthorizationCode(c *gin.Context) {
 
 type handleTokenRefreshTokenParams struct {
 	RefreshToken string `form:"refresh_token" binding:"required"`
-	ClientID     string
-	ClientSecret string
 }
 
 func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
@@ -171,8 +238,7 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 		return
 	}
 
-	var err error
-	params.ClientID, params.ClientSecret, err = clientCredentials(c)
+	credentials, err := parseClientCredentials(c)
 	if err != nil {
 		responseTokenError(c, http.StatusBadRequest, "invalid_request", err.Error())
 		return
@@ -200,9 +266,10 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 		return
 	}
 
-	// Check token match request client
-	aud, ok := verifiedToken.Audience()
-	if !ok || !slices.Contains(aud, params.ClientID) {
+	// Check the credentials identify the client the token was issued to
+	aud, _ := verifiedToken.Audience()
+	clientID, ok := credentials.matchClientID(aud...)
+	if !ok {
 		// This should never happen unless the requester is cheating.
 		responseTokenError(c, http.StatusBadRequest, "invalid_grant", "Invalid refresh token: audience")
 		return
@@ -258,8 +325,8 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 		return
 	}
 
-	// Fetch client from database using clientID
-	client, err := storage.GetClientByID(o.db, params.ClientID)
+	// Fetch client from database using the client id the token was issued to
+	client, err := storage.GetClientByID(o.db, clientID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// This should never happen unless the requester is cheating.
@@ -272,7 +339,7 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 		}
 	}
 
-	if client.Secret != params.ClientSecret {
+	if !credentials.secretMatches(client.Secret) {
 		// This should never happen unless the requester is cheating.
 		responseTokenError(c, http.StatusUnauthorized, "invalid_client", "Invalid client secret")
 		return
