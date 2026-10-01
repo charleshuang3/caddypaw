@@ -1,25 +1,65 @@
-# CaddyPAW
+# CaddyPAW Monorepo
 
-CaddyPAW is a Caddy plugin designed for authentication and firewall capabilities.
+CaddyPAW is a monorepo that combines authentication, firewall, and reverse-proxy
+gateway components into a single Go module (`github.com/charleshuang3/caddypaw`).
 
-## Summary
+## Repository Layout
 
-CaddyPAW integrates with `github.com/charleshuang3/authn` to provide:
+```
+caddypaw/
+├── cmd/
+│   ├── authn/               # Authn server entry point
+│   └── caddy/               # Caddy binary entry point embedding the caddypaw plugin
+├── pkg/
+│   ├── caddypaw/            # Caddy plugin: authn gateway (basic auth, bearer token, server cookies/OIDC)
+│   ├── authn/               # Authn service: OIDC/OAuth2 provider, storage, firewall handlers
+│   └── firewall/            # Firewall integration: IP ban logic, RouterOS/OpenSense/pfSense backends,
+│                           #   GeoIP, log exporters (GCP Cloud Logging, zerolog)
+├── test/
+│   └── e2e/                 # In-process E2E test suite (Caddy + Authn + mock firewall/upstream)
+├── example/                 # Caddyfile and authn config examples
+├── Dockerfile               # Caddy (caddypaw) image build
+└── Justfile                 # Unified task entry: just lint / build / test / fmt / e2e
+```
 
-- **OAuth/OIDC Client:** Acts as an OAuth/OIDC client and stores JWT tokens for authentication state using server cookies. It supports setting a callback URL to your application's login callback URL for OIDC login flows.
-- **Firewall Integration:** Integrates with a firewall to ban IP addresses when attacks are detected.
+## Components
+
+- **`pkg/caddypaw`** — Caddy v2 plugin acting as an authentication gateway in
+  front of upstream apps. Supports basic auth, bearer tokens, and OIDC server
+  cookies. Reports abusive IPs to the Authn firewall endpoint.
+- **`pkg/authn`** — Standalone OIDC/OAuth2 authentication service built with
+  Gin + Gorm (SQLite for testing, PostgreSQL in production). See
+  [pkg/authn/README.md](pkg/authn/README.md).
+- **`pkg/firewall`** — IP banning with sliding-window rate limiting, multiple
+  firewall backends (RouterOS, OpenSense, pfSense), GeoIP lookups, and log
+  exporters. See [pkg/firewall/README.md](pkg/firewall/README.md).
+
+## Development
+
+Common tasks are defined in the `Justfile`:
+
+```bash
+just lint    # golangci-lint
+just build   # go build ./...
+just test    # go test ./...
+just fmt     # goimports
+just e2e     # in-process E2E tests (test/e2e)
+```
 
 ## Installation
 
-To install the CaddyPAW plugin, you can use the `xcaddy` tool. If you don't have `xcaddy` installed, you can follow the instructions [here](https://github.com/caddyserver/xcaddy#install).
-
-Once you have `xcaddy`, you can build Caddy with the CaddyPAW plugin by running:
+To build a Caddy binary with the CaddyPAW plugin, use the `xcaddy` tool
+(installation instructions [here](https://github.com/caddyserver/xcaddy#install)):
 
 ```bash
 xcaddy build --with github.com/charleshuang3/caddypaw/pkg/caddypaw=./pkg/caddypaw
 ```
 
-This will produce a new Caddy binary that includes the CaddyPAW plugin.
+Alternatively, build the debug entry point directly:
+
+```bash
+go build ./cmd/caddy
+```
 
 ## Configuration
 
