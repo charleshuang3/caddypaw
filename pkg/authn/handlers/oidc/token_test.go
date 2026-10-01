@@ -362,6 +362,9 @@ func TestHandleTokenAuthorizationCode_ClientAuthMethods(t *testing.T) {
 		authCodeClient string
 		expectedStatus int
 		expectedError  string
+		// expectedChallenge is the WWW-Authenticate header the response must
+		// carry (RFC 6749 §5.2), empty when none is expected.
+		expectedChallenge string
 	}{
 		{
 			name:           "client_secret_basic only",
@@ -393,19 +396,28 @@ func TestHandleTokenAuthorizationCode_ClientAuthMethods(t *testing.T) {
 			expectedError:  "invalid_request",
 		},
 		{
-			name:           "basic with wrong secret",
-			basicID:        "existing-client",
-			basicSecret:    "wrong-secret",
+			name:              "basic with wrong secret",
+			basicID:           "existing-client",
+			basicSecret:       "wrong-secret",
+			expectedStatus:    http.StatusUnauthorized,
+			expectedError:     "invalid_client",
+			expectedChallenge: `Basic realm="oauth2/token", charset="UTF-8"`,
+		},
+		{
+			name:           "post with wrong secret",
+			formID:         "existing-client",
+			formSecret:     "wrong-secret",
 			expectedStatus: http.StatusUnauthorized,
 			expectedError:  "invalid_client",
 		},
 		{
-			name:           "basic with client not in database",
-			basicID:        "unknown-client",
-			basicSecret:    "correct-secret",
-			authCodeClient: "unknown-client",
-			expectedStatus: http.StatusUnauthorized,
-			expectedError:  "invalid_client",
+			name:              "basic with client not in database",
+			basicID:           "unknown-client",
+			basicSecret:       "correct-secret",
+			authCodeClient:    "unknown-client",
+			expectedStatus:    http.StatusUnauthorized,
+			expectedError:     "invalid_client",
+			expectedChallenge: `Basic realm="oauth2/token", charset="UTF-8"`,
 		},
 		{
 			name:           "no credentials",
@@ -451,6 +463,13 @@ func TestHandleTokenAuthorizationCode_ClientAuthMethods(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, rec.Code, "Body: %s", rec.Body.String())
 			if tt.expectedError != "" {
 				assertTokenError(t, rec, tt.expectedError)
+				assert.Equal(t, tt.expectedChallenge, rec.Header().Get("WWW-Authenticate"))
+				if tt.expectedError == "invalid_client" {
+					// The description must not tell whether the client exists.
+					var errResp tokenErrorResponse
+					require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errResp))
+					assert.Equal(t, "Client authentication failed", errResp.ErrorDescription)
+				}
 				return
 			}
 

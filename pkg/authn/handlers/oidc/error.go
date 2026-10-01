@@ -57,3 +57,16 @@ func writeTokenError(c *gin.Context, httpCode int, errCode, errMsg string) {
 		ErrorDescription: errMsg,
 	})
 }
+
+// responseInvalidClient reports a client authentication failure (RFC 6749
+// §5.2). A client that authenticated with the Authorization header must be
+// challenged with the scheme it used, and the error_description deliberately
+// does not reveal whether the client exists.
+func responseInvalidClient(c *gin.Context, detail string) {
+	logMayHack(c, detail)
+
+	if _, _, ok := c.Request.BasicAuth(); ok {
+		c.Header("WWW-Authenticate", `Basic realm="oauth2/token", charset="UTF-8"`)
+	}
+	writeTokenError(c, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
+}

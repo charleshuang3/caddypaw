@@ -189,7 +189,7 @@ func (o *OpenIDProvider) handleTokenAuthorizationCode(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// This should never happen unless the requester is cheating.
-			responseTokenError(c, http.StatusUnauthorized, "invalid_client", "Client not found")
+			responseInvalidClient(c, "Client not found")
 			return
 		} else {
 			logger.Error().Err(err).Msg("Failed to get client")
@@ -200,7 +200,7 @@ func (o *OpenIDProvider) handleTokenAuthorizationCode(c *gin.Context) {
 
 	if !credentials.secretMatches(client.Secret) {
 		// This should never happen unless the requester is cheating.
-		responseTokenError(c, http.StatusUnauthorized, "invalid_client", "Invalid client secret")
+		responseInvalidClient(c, "Invalid client secret")
 		return
 	}
 
@@ -330,7 +330,7 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// This should never happen unless the requester is cheating.
-			responseTokenError(c, http.StatusUnauthorized, "invalid_client", "Client not found")
+			responseInvalidClient(c, "Client not found")
 			return
 		} else {
 			logger.Error().Err(err).Msg("Failed to get client")
@@ -341,7 +341,7 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 
 	if !credentials.secretMatches(client.Secret) {
 		// This should never happen unless the requester is cheating.
-		responseTokenError(c, http.StatusUnauthorized, "invalid_client", "Invalid client secret")
+		responseInvalidClient(c, "Invalid client secret")
 		return
 	}
 
