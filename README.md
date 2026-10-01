@@ -46,6 +46,33 @@ just fmt     # goimports
 just e2e     # in-process E2E tests (test/e2e)
 ```
 
+CI runs `goimports` check, `golangci-lint`, unit tests, and the E2E suite
+on every push to `main` and every pull request.
+
+## E2E Tests
+
+The `test/e2e` suite runs the full chain in-process — a real Caddy instance
+with the caddypaw plugin, a real authn server (SQLite in-memory, memory
+firewall provider), and a mock upstream app — with **zero external
+dependencies**: no network, no cloud credentials, no Docker, no hardware
+firewalls.
+
+```bash
+just e2e          # or: go test -v ./test/e2e/...
+```
+
+Covered scenarios:
+
+- **OIDC flow**: unauthenticated redirect → login page → password login →
+  authorization-code exchange → cookie-authenticated request reaching the
+  upstream.
+- **Bearer token**: static token auth (missing / wrong / correct).
+- **Firewall ban**: sliding-window error counting on `/logerr` triggers a
+  ban recorded in the in-memory firewall; direct `/ban` endpoint as well.
+
+Shared offline fixtures (GeoLite2 test databases, RSA test keys, sample
+configs) live in `test/testdata/`.
+
 ## Installation
 
 To build a Caddy binary with the CaddyPAW plugin, use the `xcaddy` tool
