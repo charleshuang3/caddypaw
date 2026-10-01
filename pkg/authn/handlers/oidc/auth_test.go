@@ -76,10 +76,10 @@ func setupTestForHandleAuthorize(t *testing.T, allowPasswordLogin bool) (*OpenID
 
 func TestHandleAuthorize_Error(t *testing.T) {
 	tests := []struct {
-		name           string
-		queryParams    url.Values
-		expectedStatus int
-		expectedBody   string
+		name            string
+		queryParams     url.Values
+		expectedStatus  int
+		expectedErrCode string
 	}{
 		{
 			name: "Missing client_id",
@@ -89,8 +89,7 @@ func TestHandleAuthorize_Error(t *testing.T) {
 				"state":         {"valid-state"},
 				"scope":         {"openid profile"},
 			},
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Missing required parameters",
+			expectedStatus: http.StatusBadRequest, // cannot redirect: client unknown
 		},
 		{
 			name: "Missing redirect_uri",
@@ -100,8 +99,7 @@ func TestHandleAuthorize_Error(t *testing.T) {
 				"state":         {"valid-state"},
 				"scope":         {"openid profile"},
 			},
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Missing required parameters",
+			expectedStatus: http.StatusBadRequest, // cannot redirect: redirect_uri unknown
 		},
 		{
 			name: "Missing response_type",
@@ -111,30 +109,8 @@ func TestHandleAuthorize_Error(t *testing.T) {
 				"state":        {"valid-state"},
 				"scope":        {"openid profile"},
 			},
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Missing required parameters",
-		},
-		{
-			name: "Missing state",
-			queryParams: url.Values{
-				"client_id":     {"test-client-id"},
-				"redirect_uri":  {"http://localhost:8080/callback"},
-				"response_type": {"code"},
-				"scope":         {"openid profile"},
-			},
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Missing required parameters",
-		},
-		{
-			name: "No scope provided",
-			queryParams: url.Values{
-				"client_id":     {"test-client-id"},
-				"redirect_uri":  {"http://localhost:8080/callback"},
-				"response_type": {"code"},
-				"state":         {"valid-state"},
-			},
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Missing required parameters",
+			expectedStatus:  http.StatusFound,
+			expectedErrCode: "invalid_request",
 		},
 		{
 			name: "Invalid state format",
@@ -145,8 +121,8 @@ func TestHandleAuthorize_Error(t *testing.T) {
 				"state":         {"invalid@state"},
 				"scope":         {"openid profile"},
 			},
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Invalid state parameter format",
+			expectedStatus:  http.StatusFound,
+			expectedErrCode: "invalid_request",
 		},
 		{
 			name: "Unsupported response type",
@@ -157,8 +133,8 @@ func TestHandleAuthorize_Error(t *testing.T) {
 				"state":         {"valid-state"},
 				"scope":         {"openid profile"},
 			},
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Unsupported response type, only 'code' is supported",
+			expectedStatus:  http.StatusFound,
+			expectedErrCode: "invalid_request",
 		},
 		{
 			name: "Conflict state",
@@ -169,8 +145,8 @@ func TestHandleAuthorize_Error(t *testing.T) {
 				"state":         {"conflict-state"},
 				"scope":         {"openid profile"},
 			},
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Conflict state",
+			expectedStatus:  http.StatusFound,
+			expectedErrCode: "invalid_request",
 		},
 		{
 			name: "Client not found",
@@ -181,8 +157,7 @@ func TestHandleAuthorize_Error(t *testing.T) {
 				"state":         {"valid-state"},
 				"scope":         {"openid profile"},
 			},
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Client not found",
+			expectedStatus: http.StatusBadRequest, // cannot redirect: client unknown
 		},
 		{
 			name: "Invalid redirect URI",
@@ -193,8 +168,7 @@ func TestHandleAuthorize_Error(t *testing.T) {
 				"state":         {"valid-state"},
 				"scope":         {"openid profile"},
 			},
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Invalid redirect URI",
+			expectedStatus: http.StatusBadRequest, // cannot redirect: redirect_uri unverified
 		},
 		{
 			name: "Invalid scope",
@@ -205,8 +179,8 @@ func TestHandleAuthorize_Error(t *testing.T) {
 				"state":         {"valid-state"},
 				"scope":         {"invalid-scope"},
 			},
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Invalid scope",
+			expectedStatus:  http.StatusFound,
+			expectedErrCode: "invalid_scope",
 		},
 	}
 
@@ -220,9 +194,54 @@ func TestHandleAuthorize_Error(t *testing.T) {
 			router.ServeHTTP(rec, req)
 
 			assert.Equal(t, tt.expectedStatus, rec.Code)
-			assert.Equal(t, tt.expectedBody, rec.Body.String())
+
+			if tt.expectedStatus == http.StatusFound {
+				loc, err := url.Parse(rec.Header().Get("Location"))
+				require.NoError(t, err)
+				// Error must redirect to the client's registered redirect_uri.
+				assert.Equal(t, "localhost:8080", loc.Host)
+				q := loc.Query()
+				assert.Equal(t, tt.expectedErrCode, q.Get("error"))
+				assert.NotEmpty(t, q.Get("error_description"))
+				if tt.queryParams.Get("state") != "" {
+					assert.Equal(t, tt.queryParams.Get("state"), q.Get("state"))
+				}
+			} else {
+				// 400 responses are plain text (no safe redirect target).
+				assert.NotEmpty(t, rec.Body.String())
+			}
 		})
 	}
+}
+
+// TestHandleAuthorize_OptionalParams verifies state and scope are optional.
+func TestHandleAuthorize_OptionalParams(t *testing.T) {
+	provider, _, router := setupTestForHandleAuthorize(t, true)
+
+	queryParams := url.Values{
+		"client_id":     {"test-client-id"},
+		"redirect_uri":  {"http://localhost:8080/callback"},
+		"response_type": {"code"},
+		// no state, no scope
+	}
+
+	query := "?" + queryParams.Encode()
+	req := httptest.NewRequest(http.MethodGet, "/oauth2/authorize"+query, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code, "Body: %s", rec.Body.String())
+
+	// A generated state must have been stored with the client's default scopes.
+	var found bool
+	provider.authStateStorage.RangeValues(func(v *storage.AuthState) bool {
+		if v.ClientID == "test-client-id" && v.RedirectURI != "" {
+			found = true
+			assert.Contains(t, v.Scopes, "openid")
+		}
+		return true
+	})
+	assert.True(t, found, "expected an AuthState entry to be stored")
 }
 
 func TestHandleAuthorize_Success_LoginPage(t *testing.T) {
