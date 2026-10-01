@@ -51,14 +51,7 @@ func main() {
 
 	// Set up Gin router
 	gin.SetMode(cfg.GinMode)
-	// Trust no proxies: ClientIP() must never be spoofed via X-Forwarded-For,
-	// as it feeds the firewall ban logic.
-	router := gin.Default()
-	// Only trust X-Forwarded-For from explicitly configured proxies;
-	// ClientIP() feeds the firewall ban logic and must not be spoofable.
-	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
-		log.Fatal().Err(err).Msg("Failed to set trusted proxies")
-	}
+	router := newRouter(cfg.TrustedProxies)
 
 	// add CORS middleware
 	router.Use(corsMiddleware())
@@ -75,7 +68,7 @@ func main() {
 	oidcServer := startServer("oidc", cfg.Port, router)
 
 	// firewall handler
-	fwRouter := gin.Default()
+	fwRouter := newRouter(cfg.TrustedProxies)
 	fw.RegisterHandlers(fwRouter.Group("/"))
 
 	fwServer := startServer("firewall", cfg.BanHandlersPort, fwRouter)
@@ -106,6 +99,21 @@ func main() {
 
 	log.Info().Msg("shutting down")
 	os.Exit(0)
+}
+
+// newRouter builds a gin engine for every authn HTTP server.
+//
+// gin trusts every proxy by default, which makes ClientIP() spoofable through
+// X-Forwarded-For; ClientIP() feeds the firewall ban logic, so an attacker
+// could report errors for arbitrary IPs. Only proxies listed in
+// trusted_proxies are trusted, and an empty list (the default) trusts nobody.
+func newRouter(trustedProxies []string) *gin.Engine {
+	router := gin.Default()
+	if err := router.SetTrustedProxies(trustedProxies); err != nil {
+		log.Fatal().Err(err).Msg("Failed to set trusted proxies")
+	}
+
+	return router
 }
 
 func startServer(name string, port uint, handler http.Handler) *http.Server {
