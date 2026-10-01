@@ -1,0 +1,57 @@
+# Example deployment for caddypaw: Caddy gateway + authn sharing a Docker
+# network with a pinned subnet. authn trusts X-Forwarded-For only from this
+# subnet, so gin's ClientIP() resolves the real client IP for the firewall
+# ban logic while remaining unspoofable from outside.
+
+services:
+  caddy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./example/Caddyfile:/config/Caddyfile:ro
+      - ./example/authn.config.yaml:/config/authn.config.yaml:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      caddypaw:
+        # Optional but stricter: pin the gateway IP and trust only this
+        # single address in authn's trusted_proxies instead of the subnet.
+        # ipv4_address: 172.20.0.2
+    restart: unless-stopped
+
+  authn:
+    build:
+      context: .
+      dockerfile: Dockerfile.authn
+    # Keep the authn ports unpublished: only reachable from inside the
+    # caddypaw network. ban_handlers_port must never be exposed publicly.
+    expose:
+      - "8081"
+      - "8082"
+    volumes:
+      - ./example/authn.config.yaml:/app/authn.config.yaml:ro
+      - authn_data:/app/data
+    environment:
+      CONFIG_PATH: /app/authn.config.yaml
+    networks:
+      caddypaw:
+    restart: unless-stopped
+
+networks:
+  caddypaw:
+    driver: bridge
+    # The subnet must be pinned so trusted_proxies in authn.config.yaml
+    # stays valid across restarts.
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+volumes:
+  caddy_data:
+  caddy_config:
+  authn_data:
