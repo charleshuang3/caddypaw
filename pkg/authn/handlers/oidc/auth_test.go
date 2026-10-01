@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -233,15 +234,16 @@ func TestHandleAuthorize_OptionalParams(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code, "Body: %s", rec.Body.String())
 
 	// A generated state must have been stored with the client's default scopes.
-	var found bool
-	provider.authStateStorage.RangeValues(func(v *storage.AuthState) bool {
-		if v.ClientID == "test-client-id" && v.RedirectURI != "" {
-			found = true
-			assert.Contains(t, v.Scopes, "openid")
-		}
-		return true
-	})
-	assert.True(t, found, "expected an AuthState entry to be stored")
+	// Extract it from the login page's hidden state input.
+	stateRE := regexp.MustCompile(`name="state" value="([^"]+)"`)
+	m := stateRE.FindStringSubmatch(rec.Body.String())
+	require.NotNil(t, m, "expected a state input on the login page")
+
+	authState, ok := provider.authStateStorage.Get(m[1])
+	require.True(t, ok, "expected the generated state to be stored")
+	assert.Equal(t, "test-client-id", authState.ClientID)
+	assert.Equal(t, "http://localhost:8080/callback", authState.RedirectURI)
+	assert.Contains(t, authState.Scopes, "openid")
 }
 
 func TestHandleAuthorize_Success_LoginPage(t *testing.T) {

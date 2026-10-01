@@ -48,11 +48,6 @@ func (s *AuthStateStorage) Set(key string, value *AuthState) {
 	s.cache.Wait()
 }
 
-// RangeValues iterates over all stored auth states. Used by tests.
-func (s *AuthStateStorage) RangeValues(f func(value *AuthState) bool) {
-	s.cache.IterValues(f)
-}
-
 func (s *AuthStateStorage) Delete(key string) {
 	s.cache.Del(key)
 	s.cache.Wait()

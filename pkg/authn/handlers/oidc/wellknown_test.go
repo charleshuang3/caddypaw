@@ -49,6 +49,7 @@ func TestHandleWellKnownConfig(t *testing.T) {
 		Issuer:                "http://localhost:8080/oauth2",
 		AuthorizationEndpoint: "http://localhost:8080/oauth2/authorize",
 		TokenEndpoint:         "http://localhost:8080/oauth2/token",
+		UserinfoEndpoint:      "http://localhost:8080/oauth2/userinfo",
 		JWKSURI:               "http://localhost:8080/oauth2/.well-known/jwks.json",
 		ResponseTypes:         []string{"code"}, // only code flow is supported
 		GrantTypes:            []string{"authorization_code", "refresh_token"},

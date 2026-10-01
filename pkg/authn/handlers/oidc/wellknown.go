@@ -10,6 +10,7 @@ type wellKnownConfigResponse struct {
 	Issuer                string   `json:"issuer"`
 	AuthorizationEndpoint string   `json:"authorization_endpoint"`
 	TokenEndpoint         string   `json:"token_endpoint"`
+	UserinfoEndpoint      string   `json:"userinfo_endpoint"`
 	JWKSURI               string   `json:"jwks_uri"`
 	ResponseTypes         []string `json:"response_types_supported"`
 	GrantTypes            []string `json:"grant_types_supported"`
@@ -23,6 +24,7 @@ func (o *OpenIDProvider) handleWellKnownConfig(c *gin.Context) {
 		Issuer:                o.config.Issuer,
 		AuthorizationEndpoint: o.config.Issuer + "/authorize",
 		TokenEndpoint:         o.config.Issuer + "/token",
+		UserinfoEndpoint:      o.config.Issuer + "/userinfo",
 		JWKSURI:               o.config.Issuer + "/.well-known/jwks.json",
 		ResponseTypes:         []string{"code"}, // only code flow is supported
 		GrantTypes:            []string{"authorization_code", "refresh_token"},
