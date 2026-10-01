@@ -21,7 +21,7 @@ jobs:
         include:
           - image: charleshuang3/caddypaw
             file: Dockerfile
-          - image: charleshuang3/authn
+          - image: charleshuang3/caddypaw-authn
             file: Dockerfile.authn
     steps:
       - uses: actions/checkout@v7
