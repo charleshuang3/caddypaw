@@ -1,6 +1,7 @@
 package ipgeo
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -27,6 +28,15 @@ type AutoUpdateMMIPGeo struct {
 	lastCheck         time.Time
 }
 
+// NewAutoUpdateMMIPGeo opens the current city/ASN databases and sets up
+// automatic update checking on GetIPGeo().
+//
+// The updated*File paths are locations where an external updater (e.g.
+// geoipupdate run by cron/systemd) drops newer databases; this type never
+// downloads anything itself. An updated*File is allowed to not exist yet —
+// that is the normal state before the first external update, in which case
+// the current databases keep being used. When an updated*File exists and is
+// newer than the current file, it is adopted and replaces the current file.
 func NewAutoUpdateMMIPGeo(cityDBFile, updatedCityDBFile, asnDBFile, updatedASNDBFile string) (*AutoUpdateMMIPGeo, error) {
 	mm, err := NewMMIPGeo(cityDBFile, asnDBFile)
 	if err != nil {
@@ -107,13 +117,22 @@ func (db *AutoUpdateMMIPGeo) update() {
 
 	cityDBUpdated, updatedCityDBStat, err := isFileUpdated(db.cityDBFile, db.updatedCityDBFile)
 	if err != nil {
-		log.Printf("Check city db update failed: %v", err)
+		if errors.Is(err, os.ErrNotExist) {
+			// No external update has been dropped yet; normal state, not an error.
+			log.Printf("No updated city db yet (%s), keep using %s", db.updatedCityDBFile, db.cityDBFile)
+		} else {
+			log.Printf("Check city db update failed: %v", err)
+		}
 		return
 	}
 
 	asnDBUpdated, updatedASNDBStat, err := isFileUpdated(db.asnDBFile, db.updatedASNDBFile)
 	if err != nil {
-		log.Printf("Check asn db update failed: %v", err)
+		if errors.Is(err, os.ErrNotExist) {
+			log.Printf("No updated asn db yet (%s), keep using %s", db.updatedASNDBFile, db.asnDBFile)
+		} else {
+			log.Printf("Check asn db update failed: %v", err)
+		}
 		return
 	}
 
