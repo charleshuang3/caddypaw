@@ -1,6 +1,7 @@
 package caddypaw
 
 import (
+	"net"
 	"net/http"
 	"net/url"
 
@@ -12,8 +13,15 @@ func (a *authModule) logErr(r *http.Request, reason string) {
 		return
 	}
 
+	// Strip the port from RemoteAddr (e.g. "1.2.3.4:56789") so that the
+	// authn server receives a bare IP.
+	ip := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(ip); err == nil {
+		ip = host
+	}
+
 	q := url.Values{
-		"ip":     {r.RemoteAddr},
+		"ip":     {ip},
 		"reason": {reason},
 	}
 
