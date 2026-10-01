@@ -9,13 +9,20 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  build-and-push-caddy-image:
+  build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
       attestations: write
       id-token: write
+    strategy:
+      matrix:
+        include:
+          - image: charleshuang3/caddypaw
+            file: Dockerfile
+          - image: charleshuang3/authn
+            file: Dockerfile.authn
     steps:
       - uses: actions/checkout@v7
 
@@ -30,7 +37,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/charleshuang3/caddypaw
+          images: ${{ env.REGISTRY }}/${{ matrix.image }}
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=ref,event=branch
@@ -41,7 +48,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: Dockerfile
+          file: ${{ matrix.file }}
           target: deploy
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -50,50 +57,6 @@ jobs:
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v4
         with:
-          subject-name: ${{ env.REGISTRY }}/charleshuang3/caddypaw
-          subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
-
-  build-and-push-authn-image:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Log in to the Container registry
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.REGISTRY }}/charleshuang3/authn
-          tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=ref,event=branch
-            type=sha
-
-      - name: Build and push
-        id: push
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./Dockerfile.authn
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-
-      - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v4
-        with:
-          subject-name: ${{ env.REGISTRY }}/charleshuang3/authn
+          subject-name: ${{ env.REGISTRY }}/${{ matrix.image }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true

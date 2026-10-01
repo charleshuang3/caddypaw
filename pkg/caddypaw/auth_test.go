@@ -1,6 +1,7 @@
 package caddypaw
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -330,14 +331,14 @@ func TestAuthConfigValidate(t *testing.T) {
 }
 
 func TestAuthProvision(t *testing.T) {
-	caddyfileInput := `{
-	authn_yaml_file testdata/test.yaml
+	caddyfileInput := fmt.Sprintf(`{
+	authn_yaml_file %s
 }
 
 example.com {
 	respond "hi"
 }
-`
+`, testdata.AuthnYAML(t))
 
 	cfg := caddyConfig(t, caddyfileInput)
 	ctx, err := caddy.ProvisionContext(cfg)
@@ -356,11 +357,11 @@ example.com {
 
 	assert.Equal(t,
 		&config.AuthnConfig{
-			Issuer:             "http://example.com:8443/oauth2",
-			AuthURL:            "http://example.com:8443/oauth2/authorize",
-			TokenURL:           "http://example.com:8443/oauth2/token",
-			NonOIDCUserInfoURL: "http://example.com:8443/user/info",
-			FirewallURL:        "http://127.0.0.1:8444/",
+			Issuer:             testdata.Issuer,
+			AuthURL:            testdata.AuthURL,
+			TokenURL:           testdata.TokenURL,
+			NonOIDCUserInfoURL: testdata.NonOIDCUserInfoURL,
+			FirewallURL:        testdata.FirewallURL,
 			PublicKeyPEM:       testdata.PublicKeyPEM,
 		}, a.authnConfig)
 
@@ -368,9 +369,9 @@ example.com {
 }
 
 func TestAuthDirective(t *testing.T) {
-	caddyfileInput := `{
+	caddyfileInput := fmt.Sprintf(`{
 	order paw_auth before basic_auth
-	authn_yaml_file testdata/test.yaml
+	authn_yaml_file %s
 }
 
 example.com {
@@ -383,7 +384,7 @@ example.com {
 	}
 	respond "hi"
 }
-`
+`, testdata.AuthnYAML(t))
 
 	cfg := caddyConfig(t, caddyfileInput)
 

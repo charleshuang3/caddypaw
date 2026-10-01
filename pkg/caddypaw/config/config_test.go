@@ -10,15 +10,15 @@ import (
 )
 
 func TestLoadFromFile(t *testing.T) {
-	conf, err := LoadFromFile(`../testdata/test.yaml`)
+	conf, err := LoadFromFile(testdata.AuthnYAML(t))
 	require.NoError(t, err)
 
 	assert.Equal(t, &AuthnConfig{
-		Issuer:             "http://example.com:8443/oauth2",
-		AuthURL:            "http://example.com:8443/oauth2/authorize",
-		TokenURL:           "http://example.com:8443/oauth2/token",
-		NonOIDCUserInfoURL: "http://example.com:8443/user/info",
-		FirewallURL:        "http://127.0.0.1:8444/",
+		Issuer:             testdata.Issuer,
+		AuthURL:            testdata.AuthURL,
+		TokenURL:           testdata.TokenURL,
+		NonOIDCUserInfoURL: testdata.NonOIDCUserInfoURL,
+		FirewallURL:        testdata.FirewallURL,
 		PublicKeyPEM:       testdata.PublicKeyPEM,
 	}, conf)
 

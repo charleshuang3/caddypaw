@@ -2,6 +2,7 @@ package caddypaw
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -15,14 +16,14 @@ import (
 )
 
 func TestParseGlobalOptionAuthnYAMLFilePath(t *testing.T) {
-	caddyfileInput := `{
-	authn_yaml_file testdata/test.yaml
+	caddyfileInput := fmt.Sprintf(`{
+	authn_yaml_file %s
 }
 
 example.com {
 	respond "hi"
 }
-`
+`, testdata.AuthnYAML(t))
 
 	cfg := caddyConfig(t, caddyfileInput)
 
@@ -38,11 +39,11 @@ example.com {
 
 	want := &globalOptionModule{
 		AuthnConfig: &config.AuthnConfig{
-			Issuer:             "http://example.com:8443/oauth2",
-			AuthURL:            "http://example.com:8443/oauth2/authorize",
-			TokenURL:           "http://example.com:8443/oauth2/token",
-			NonOIDCUserInfoURL: "http://example.com:8443/user/info",
-			FirewallURL:        "http://127.0.0.1:8444/",
+			Issuer:             testdata.Issuer,
+			AuthURL:            testdata.AuthURL,
+			TokenURL:           testdata.TokenURL,
+			NonOIDCUserInfoURL: testdata.NonOIDCUserInfoURL,
+			FirewallURL:        testdata.FirewallURL,
 			PublicKeyPEM:       testdata.PublicKeyPEM,
 		},
 	}
