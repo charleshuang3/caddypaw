@@ -22,8 +22,10 @@ func (a *authModule) logErr(r *http.Request, reason string) {
 	resp, err := httpClient.Get(u)
 	if err != nil {
 		a.logger.Error("firewall log err", zap.Error(err))
+		return
 	}
 	defer func() { _ = resp.Body.Close() }()
+
 	if resp.StatusCode != http.StatusOK {
 		a.logger.Error("firewall log err", zap.Int("status", resp.StatusCode))
 	}
