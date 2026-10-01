@@ -12,13 +12,21 @@ var (
 	cleanedErrorMessage = true
 )
 
-func responseErrorAndLogMaybeHack(c *gin.Context, httpCode int, errMsg string) {
-	logMayHack(c, errMsg)
+// responseError writes a plain text error response without reporting the
+// request to the firewall.
+func responseError(c *gin.Context, httpCode int, errMsg string) {
 	if cleanedErrorMessage {
 		c.String(httpCode, http.StatusText(httpCode))
 	} else {
 		c.String(httpCode, errMsg)
 	}
+}
+
+// responseErrorAndLogMaybeHack responds with a plain text error and logs the
+// detailed message as a possible hacking attempt.
+func responseErrorAndLogMaybeHack(c *gin.Context, httpCode int, errMsg string) {
+	logMayHack(c, errMsg)
+	responseError(c, httpCode, errMsg)
 }
 
 func logMayHack(c *gin.Context, errMsg string) {

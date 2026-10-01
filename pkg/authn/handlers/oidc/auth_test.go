@@ -52,10 +52,10 @@ func setupTestProvider(t *testing.T, middlewares ...gin.HandlerFunc) (*OpenIDPro
 	return provider, database, router
 }
 
-func setupTestForHandleAuthorize(t *testing.T, allowPasswordLogin bool) (*OpenIDProvider, *gormw.DB, *gin.Engine) {
+func setupTestForHandleAuthorize(t *testing.T, allowPasswordLogin bool, middlewares ...gin.HandlerFunc) (*OpenIDProvider, *gormw.DB, *gin.Engine) {
 	t.Helper()
 
-	provider, db, router := setupTestProvider(t)
+	provider, db, router := setupTestProvider(t, middlewares...)
 
 	// Use simplified login page template for testing
 	useActualLoginPageTemplate(t)
@@ -272,6 +272,85 @@ func TestHandleAuthorize_OptionalParams(t *testing.T) {
 	assert.Equal(t, "test-client-id", authState.ClientID)
 	assert.Equal(t, "http://localhost:8080/callback", authState.RedirectURI)
 	assert.Contains(t, authState.Scopes, "openid")
+}
+
+// TestHandleAuthorize_FirewallReporting verifies that only requests naming an
+// unknown client or an unregistered redirect URI are reported to the firewall.
+// A client that merely gets its request wrong must not be pushed towards a ban.
+func TestHandleAuthorize_FirewallReporting(t *testing.T) {
+	tests := []struct {
+		name           string
+		queryParams    url.Values
+		expectedReport bool
+	}{
+		{
+			name: "unknown client is reported",
+			queryParams: url.Values{
+				"client_id":     {"unknown-client"},
+				"redirect_uri":  {"http://localhost:8080/callback"},
+				"response_type": {"code"},
+			},
+			expectedReport: true,
+		},
+		{
+			name: "unregistered redirect uri is reported",
+			queryParams: url.Values{
+				"client_id":     {"test-client-id"},
+				"redirect_uri":  {"http://evil.example.com/callback"},
+				"response_type": {"code"},
+			},
+			expectedReport: true,
+		},
+		{
+			name:        "missing parameters are not reported",
+			queryParams: url.Values{},
+		},
+		{
+			name: "unsupported response type is not reported",
+			queryParams: url.Values{
+				"client_id":     {"test-client-id"},
+				"redirect_uri":  {"http://localhost:8080/callback"},
+				"response_type": {"token"},
+				"state":         {"valid-state"},
+			},
+		},
+		{
+			name: "conflict state is not reported",
+			queryParams: url.Values{
+				"client_id":     {"test-client-id"},
+				"redirect_uri":  {"http://localhost:8080/callback"},
+				"response_type": {"code"},
+				"state":         {"conflict-state"},
+			},
+		},
+		{
+			name: "invalid scope is not reported",
+			queryParams: url.Values{
+				"client_id":     {"test-client-id"},
+				"redirect_uri":  {"http://localhost:8080/callback"},
+				"response_type": {"code"},
+				"state":         {"valid-state"},
+				"scope":         {"invalid-scope"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reports := &firewallReports{}
+			_, _, router := setupTestForHandleAuthorize(t, true, reports.middleware())
+
+			req := httptest.NewRequest(http.MethodGet, "/oauth2/authorize?"+tt.queryParams.Encode(), nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if tt.expectedReport {
+				assert.Len(t, reports.reasons, 1)
+			} else {
+				assert.Empty(t, reports.reasons)
+			}
+		})
+	}
 }
 
 // TestHandleAuthorize_ScopeNormalization verifies that repeated whitespace in

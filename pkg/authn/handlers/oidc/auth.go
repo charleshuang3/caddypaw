@@ -42,8 +42,15 @@ type handleAuthorizeParams struct {
 // responseAuthorizeError redirects back to the client's redirect_uri with the
 // standard OAuth2 error parameters (RFC 6749 §4.1.2.1). Only call this after
 // the redirect_uri has been validated, otherwise it is an open redirect.
+//
+// These failures are the client's own fault (bad request, unsupported response
+// type, invalid scope) rather than an attack, so they are not reported to the
+// firewall: a client with a retry loop would otherwise get its IP banned.
 func responseAuthorizeError(c *gin.Context, redirectURI, errCode, description, state string) {
-	logMayHack(c, description)
+	logger.Info().
+		Str("error", errCode).
+		Str("description", description).
+		Msg("authorize request rejected")
 
 	u, err := url.Parse(redirectURI)
 	if err != nil {
@@ -69,7 +76,9 @@ func (o *OpenIDProvider) handleAuthorize(c *gin.Context) {
 	params := &handleAuthorizeParams{}
 
 	if err := c.ShouldBindQuery(params); err != nil {
-		responseErrorAndLogMaybeHack(c, http.StatusBadRequest, "Missing required parameters")
+		// The client id and redirect_uri are the only required parameters, and
+		// both are needed to report an error anywhere but here.
+		responseError(c, http.StatusBadRequest, "Missing required parameters")
 		return
 	}
 
