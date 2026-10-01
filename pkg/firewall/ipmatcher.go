@@ -48,15 +48,21 @@ func (s *ipMatcher) match(ip net.IP) bool {
 
 func parseIP(s string) net.IP {
 	// This is safe to crash, as the ip is from config
-	ip := net.ParseIP(s)
+	ip := parseIPOrNil(s)
 	if ip == nil {
 		log.Fatalf("net.ParseIP(%q) failed", s)
 	}
 
-	ip = ip.To4()
+	return ip
+}
+
+// parseIPOrNil parses a runtime-supplied IP (e.g. from an HTTP request). It
+// never crashes: unparseable or non-IPv4 input returns nil.
+func parseIPOrNil(s string) net.IP {
+	ip := net.ParseIP(s)
 	if ip == nil {
-		log.Fatalf("%q is not ipv4", s)
+		return nil
 	}
 
-	return ip
+	return ip.To4()
 }

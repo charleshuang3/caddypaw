@@ -108,8 +108,15 @@ func (s *Firewall) loop() {
 }
 
 func (s *Firewall) inWhitelist(ip string) bool {
+	// IP may come from runtime sources; unparseable input must not crash the
+	// process, treat it as not whitelisted.
+	parsed := parseIPOrNil(ip)
+	if parsed == nil {
+		return false
+	}
+
 	for _, it := range s.whiteList {
-		if it.match(parseIP(ip)) {
+		if it.match(parsed) {
 			return true
 		}
 	}

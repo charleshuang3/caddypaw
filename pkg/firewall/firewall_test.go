@@ -171,6 +171,28 @@ func TestLogIPError(t *testing.T) {
 			expectedLogAction: "whitelisted",
 			expectLog:         false,
 		},
+		{
+			name:              "Log error with unparseable IP, must not crash",
+			ip:                "192.168.1.1:54321", // host:port, unparseable as IP
+			reason:            "Invalid password",
+			forgivable:        ForgivableError{Duration: time.Minute, Count: 2, BanInMinute: 5},
+			errorCount:        3,
+			whiteList:         []string{"192.168.1.0/24"},
+			expectedBanned:    true,
+			expectedLogAction: "ban",
+			expectLog:         true,
+		},
+		{
+			name:              "Log error with IPv6 IP, must not crash",
+			ip:                "2001:db8::1",
+			reason:            "Invalid password",
+			forgivable:        ForgivableError{Duration: time.Minute, Count: 2, BanInMinute: 5},
+			errorCount:        2,
+			whiteList:         []string{"192.168.1.0/24"},
+			expectedBanned:    false,
+			expectedLogAction: "count error",
+			expectLog:         true,
+		},
 	}
 
 	for _, tt := range tests {
