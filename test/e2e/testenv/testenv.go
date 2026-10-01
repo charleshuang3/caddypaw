@@ -42,6 +42,7 @@ import (
 	"github.com/charleshuang3/caddypaw/pkg/authn/handlers/oidc"
 	"github.com/charleshuang3/caddypaw/pkg/authn/handlers/statisfiles"
 	"github.com/charleshuang3/caddypaw/pkg/authn/models"
+	authntestdata "github.com/charleshuang3/caddypaw/pkg/authn/testdata"
 	"github.com/charleshuang3/caddypaw/pkg/firewall/memory"
 )
 
@@ -145,7 +146,7 @@ func (c *Cluster) startAuthn() {
 		GinMode: gin.TestMode,
 		OIDC: oidc.OIDCProviderConfig{
 			Title:         "e2e-authn",
-			PrivateKeyPEM: string(mustRead(t, "keys/private_key.pem")),
+			PrivateKeyPEM: authntestdata.PrivateKeyPEM,
 			Issuer:        "http://127.0.0.1/oauth2", // replaced below
 		},
 		DB: gormw.Config{},
@@ -282,12 +283,13 @@ func (c *Cluster) Client() *http.Client {
 	}
 }
 
-// testMMDBPaths returns the shared GeoLite2 test databases.
+// testMMDBPaths returns the GeoLite2 test databases owned by the ipgeo
+// package, so E2E and unit tests share a single set of fixtures.
 func testMMDBPaths(t *testing.T) (city, asn string) {
 	t.Helper()
-	base := repoRoot(t)
-	return filepath.Join(base, "test/testdata/mmdb/GeoLite2-City-Test.mmdb"),
-		filepath.Join(base, "test/testdata/mmdb/GeoLite2-ASN-Test.mmdb")
+	base := filepath.Join(repoRoot(t), "pkg/firewall/ipgeo/test-data")
+	return filepath.Join(base, "GeoLite2-City-Test.mmdb"),
+		filepath.Join(base, "GeoLite2-ASN-Test.mmdb")
 }
 
 func repoRoot(t *testing.T) string {
@@ -313,13 +315,6 @@ func copyFile(src, dst string) error {
 	return os.WriteFile(dst, data, 0o600)
 }
 
-func mustRead(t *testing.T, rel string) []byte {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join(repoRoot(t), "test/testdata", rel))
-	require.NoError(t, err)
-	return data
-}
-
 // WriteAuthnGatewayYAML writes a caddypaw gateway config (the file loaded via
 // the `authn_yaml_file` global option) to a temp file and returns its path.
 func WriteAuthnGatewayYAML(t *testing.T, authURL, tokenURL, userInfoURL, firewallURL string) string {
@@ -330,9 +325,7 @@ func WriteAuthnGatewayYAML(t *testing.T, authURL, tokenURL, userInfoURL, firewal
 		"token_url":             tokenURL,
 		"non_oidc_userinfo_url": userInfoURL,
 		"firewall_url":          firewallURL,
-		"public_key_pem":        string(mustRead(t, "keys/public_key.pem")),
-		"client_id":             TestClientID,
-		"client_secret":         TestClientSecret,
+		"public_key_pem":        authntestdata.PublicKeyPEM,
 	}
 	data, err := yaml.Marshal(cfg)
 	require.NoError(t, err)

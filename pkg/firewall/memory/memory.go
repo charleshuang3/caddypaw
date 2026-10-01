@@ -6,6 +6,8 @@ package memory
 import (
 	"sync"
 	"time"
+
+	"github.com/charleshuang3/caddypaw/pkg/firewall"
 )
 
 // Ban records a single ban event issued by the Firewall.
@@ -21,10 +23,8 @@ type Firewall struct {
 	bans []Ban
 }
 
-// Interface guard to ensure Firewall satisfies fw.IFirewall.
-var _ interface {
-	BanIP(ip string, timeoutInMinute int)
-} = (*Firewall)(nil)
+// Interface guard to ensure Firewall satisfies firewall.IFirewall.
+var _ firewall.IFirewall = (*Firewall)(nil)
 
 // New returns an empty in-memory firewall.
 func New() *Firewall {

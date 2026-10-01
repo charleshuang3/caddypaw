@@ -8,7 +8,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"go.uber.org/zap"
 
-	"github.com/charleshuang3/caddypaw/internal/config"
+	"github.com/charleshuang3/caddypaw/pkg/caddypaw/config"
 )
 
 const (

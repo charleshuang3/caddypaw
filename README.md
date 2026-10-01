@@ -70,8 +70,9 @@ Covered scenarios:
 - **Firewall ban**: sliding-window error counting on `/logerr` triggers a
   ban recorded in the in-memory firewall; direct `/ban` endpoint as well.
 
-Shared offline fixtures (GeoLite2 test databases, RSA test keys, sample
-configs) live in `test/testdata/`.
+The suite reuses the fixtures owned by each package: the GeoLite2 test
+databases from `pkg/firewall/ipgeo/test-data` and the RSA test key pair from
+`pkg/authn/testdata`.
 
 ## Installation
 
@@ -79,10 +80,18 @@ To build a Caddy binary with the CaddyPAW plugin, use the `xcaddy` tool
 (installation instructions [here](https://github.com/caddyserver/xcaddy#install)):
 
 ```bash
-xcaddy build --with github.com/charleshuang3/caddypaw/pkg/caddypaw=./pkg/caddypaw
+# From a released version:
+xcaddy build --with github.com/charleshuang3/caddypaw/pkg/caddypaw
+
+# From a local checkout (development):
+xcaddy build \
+    --with github.com/charleshuang3/caddypaw/pkg/caddypaw \
+    --replace github.com/charleshuang3/caddypaw=.
 ```
 
-Alternatively, build the debug entry point directly:
+The `--with` flag names the *package* to import; `--replace` maps the owning
+*module* to the local directory (which must contain `go.mod`). Alternatively,
+build the debug entry point directly:
 
 ```bash
 go build ./cmd/caddy

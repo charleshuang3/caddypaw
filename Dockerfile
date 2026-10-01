@@ -20,7 +20,8 @@ COPY . .
 # Build Caddy with specified plugins
 RUN xcaddy build ${CADDY_VERSION} \
     --with github.com/caddy-dns/cloudflare \
-    --with github.com/charleshuang3/caddypaw/pkg/caddypaw=./pkg/caddypaw \
+    --with github.com/charleshuang3/caddypaw/pkg/caddypaw \
+    --replace github.com/charleshuang3/caddypaw=. \
     --output bin/caddy
 
 # Stage 2: Runtime

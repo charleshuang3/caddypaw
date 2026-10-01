@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/charleshuang3/caddypaw/internal/config"
+	"github.com/charleshuang3/caddypaw/pkg/caddypaw/config"
 	"github.com/charleshuang3/caddypaw/pkg/caddypaw/testdata"
 )
 

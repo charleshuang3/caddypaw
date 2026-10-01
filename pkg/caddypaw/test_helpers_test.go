@@ -14,7 +14,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 
-	"github.com/charleshuang3/caddypaw/internal/config"
+	"github.com/charleshuang3/caddypaw/pkg/caddypaw/config"
 	"github.com/charleshuang3/caddypaw/pkg/caddypaw/testdata"
 )
 

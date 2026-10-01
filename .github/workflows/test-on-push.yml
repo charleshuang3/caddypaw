@@ -8,8 +8,8 @@ on:
 
 env:
   GO_VERSION: '1.27.1'
-  GOIMPORTS_VERSION: latest
-  GOLANGCI_LINT_VERSION: latest
+  GOIMPORTS_VERSION: v0.50.0
+  GOLANGCI_LINT_VERSION: v2.13.1
 
 jobs:
   backend:
@@ -40,10 +40,6 @@ jobs:
         run: |
           $(go env GOPATH)/bin/golangci-lint run ./...
 
-      - name: Run unit tests
+      - name: Run tests
         run: |
           go test -v ./...
-
-      - name: Run E2E tests
-        run: |
-          go test -v ./test/e2e/...

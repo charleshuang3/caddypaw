@@ -48,6 +48,8 @@ type FirewallConfig struct {
 }
 
 var (
+	// "memory" is a test-only provider: it records bans in memory instead of
+	// touching a network device, and is intended for unit/E2E tests.
 	supportedProviders = []string{"none", "memory", "ros", "opn", "pf"}
 )
 

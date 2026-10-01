@@ -10,7 +10,7 @@ import (
 )
 
 func TestLoadFromFile(t *testing.T) {
-	conf, err := LoadFromFile(`../../pkg/caddypaw/testdata/test.yaml`)
+	conf, err := LoadFromFile(`../testdata/test.yaml`)
 	require.NoError(t, err)
 
 	assert.Equal(t, &AuthnConfig{
