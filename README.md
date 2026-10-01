@@ -19,7 +19,7 @@ caddypaw/
 │   └── e2e/                 # In-process E2E test suite (Caddy + Authn + mock firewall/upstream)
 ├── example/                 # Caddyfile and authn config examples
 ├── Dockerfile               # Caddy (caddypaw) image build
-└── Justfile                 # Unified task entry: just lint / build / test / fmt / e2e
+└── Justfile                 # Unified task entry: just lint / build / test / fmt
 ```
 
 ## Components
@@ -43,10 +43,9 @@ just lint    # golangci-lint
 just build   # go build ./...
 just test    # go test ./...
 just fmt     # goimports
-just e2e     # in-process E2E tests (test/e2e)
 ```
 
-CI runs `goimports` check, `golangci-lint`, unit tests, and the E2E suite
+CI runs `goimports` check, `golangci-lint`, and the test suite (unit + E2E)
 on every push to `main` and every pull request.
 
 ## E2E Tests
@@ -58,7 +57,7 @@ dependencies**: no network, no cloud credentials, no Docker, no hardware
 firewalls.
 
 ```bash
-just e2e          # or: go test -v ./test/e2e/...
+go test -v ./test/e2e/...
 ```
 
 Covered scenarios:

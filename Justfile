@@ -27,10 +27,6 @@ lint:
 test:
     go test -v ./...
 
-# Run E2E tests (in-process, no external dependencies)
-e2e:
-    go test -v ./test/e2e/...
-
 # Run go mod tidy
 tidy:
     go mod tidy
