@@ -51,7 +51,14 @@ func main() {
 
 	// Set up Gin router
 	gin.SetMode(cfg.GinMode)
+	// Trust no proxies: ClientIP() must never be spoofed via X-Forwarded-For,
+	// as it feeds the firewall ban logic.
 	router := gin.Default()
+	// Trust no proxies: ClientIP() must never be spoofed via X-Forwarded-For,
+	// as it feeds the firewall ban logic.
+	if err := router.SetTrustedProxies(nil); err != nil {
+		log.Fatal().Err(err).Msg("Failed to set trusted proxies")
+	}
 
 	// add CORS middleware
 	router.Use(corsMiddleware())
