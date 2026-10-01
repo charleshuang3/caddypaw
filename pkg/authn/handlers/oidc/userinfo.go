@@ -21,37 +21,43 @@ type userInfoResponse struct {
 	Email   string `json:"email,omitempty"`
 }
 
+// bearerScheme is the Authorization scheme of the UserInfo endpoint
+// (RFC 6750 §2.1). Scheme names are case-insensitive (RFC 7235 §2.1).
+const bearerScheme = "Bearer"
+
+// writeUserInfoError writes the 401 carrying the WWW-Authenticate challenge
+// required for Bearer token failures (RFC 6750 §3).
+func writeUserInfoError(c *gin.Context, description string) {
+	c.Header("WWW-Authenticate",
+		`Bearer realm="oauth2/userinfo", error="invalid_token", error_description="`+description+`"`)
+	c.String(http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
+}
+
 // handleUserInfo implements the OIDC Core §5.3 UserInfo endpoint. It validates
 // the Bearer access token and returns the user's claims, filtered by the
 // scopes granted to the token.
 func (o *OpenIDProvider) handleUserInfo(c *gin.Context) {
-	authHeader := c.GetHeader("Authorization")
-	const prefix = "Bearer "
-	if !strings.HasPrefix(authHeader, prefix) {
-		c.Header("WWW-Authenticate", `Bearer error="invalid_token", error_description="missing bearer token"`)
-		c.String(http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
+	scheme, accessToken, found := strings.Cut(c.GetHeader("Authorization"), " ")
+	if !found || !strings.EqualFold(scheme, bearerScheme) || accessToken == "" {
+		writeUserInfoError(c, "missing bearer token")
 		return
 	}
-	accessToken := strings.TrimPrefix(authHeader, prefix)
 
 	// Verify signature, expiry and issuer.
 	token, err := jwt.Parse([]byte(accessToken), jwt.WithKey(jwa.RS256(), o.publicKey))
 	if err != nil {
-		c.Header("WWW-Authenticate", `Bearer error="invalid_token", error_description="invalid access token"`)
-		c.String(http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
+		writeUserInfoError(c, "invalid access token")
 		return
 	}
 
 	if issuer, ok := token.Issuer(); !ok || issuer != o.config.Issuer {
-		c.Header("WWW-Authenticate", `Bearer error="invalid_token", error_description="invalid issuer"`)
-		c.String(http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
+		writeUserInfoError(c, "invalid issuer")
 		return
 	}
 
 	subject, ok := token.Subject()
 	if !ok || subject == "" {
-		c.Header("WWW-Authenticate", `Bearer error="invalid_token", error_description="no subject"`)
-		c.String(http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
+		writeUserInfoError(c, "no subject")
 		return
 	}
 
@@ -73,7 +79,7 @@ func (o *OpenIDProvider) handleUserInfo(c *gin.Context) {
 	user, err := storage.GetUserByUsernameOrEmail(o.db, subject)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.String(http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
+			writeUserInfoError(c, "unknown subject")
 			return
 		}
 		logger.Error().Err(err).Msg("Database error during userinfo")

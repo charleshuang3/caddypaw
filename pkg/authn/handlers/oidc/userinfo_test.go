@@ -68,6 +68,7 @@ func TestHandleUserInfo(t *testing.T) {
 		name           string
 		subject        string
 		scopes         []string
+		scheme         string
 		expectedStatus int
 		checkClaims    func(*testing.T, userInfoResponse)
 	}{
@@ -109,6 +110,16 @@ func TestHandleUserInfo(t *testing.T) {
 			},
 		},
 		{
+			name:           "lowercase bearer scheme",
+			subject:        "existinguser",
+			scopes:         []string{"openid"},
+			scheme:         "bearer",
+			expectedStatus: http.StatusOK,
+			checkClaims: func(t *testing.T, r userInfoResponse) {
+				assert.Equal(t, "existinguser", r.Sub)
+			},
+		},
+		{
 			name:           "unknown subject",
 			subject:        "nonexistent",
 			scopes:         []string{"openid"},
@@ -122,12 +133,20 @@ func TestHandleUserInfo(t *testing.T) {
 
 			token := genTestAccessToken(t, provider, tt.subject, tt.scopes, time.Now().Add(time.Minute))
 
+			scheme := tt.scheme
+			if scheme == "" {
+				scheme = "Bearer"
+			}
+
 			req := httptest.NewRequest(http.MethodGet, "/oauth2/userinfo", nil)
-			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("Authorization", scheme+" "+token)
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
 
 			assert.Equal(t, tt.expectedStatus, rec.Code, "Body: %s", rec.Body.String())
+			if tt.expectedStatus == http.StatusUnauthorized {
+				assertBearerChallenge(t, rec)
+			}
 
 			if tt.checkClaims != nil {
 				var resp userInfoResponse
@@ -144,6 +163,9 @@ func TestHandleUserInfo_BadToken(t *testing.T) {
 	tests := []struct {
 		name  string
 		token func() string
+		// authz overrides the Authorization header; the default is the Bearer
+		// scheme followed by the token, and no header at all for empty tokens.
+		authz func(token string) string
 	}{
 		{
 			name:  "no Authorization header",
@@ -152,6 +174,16 @@ func TestHandleUserInfo_BadToken(t *testing.T) {
 		{
 			name:  "garbage token",
 			token: func() string { return "not-a-jwt" },
+		},
+		{
+			name:  "no token after the scheme",
+			token: func() string { return "" },
+			authz: func(tok string) string { return "Bearer" },
+		},
+		{
+			name:  "wrong scheme",
+			token: func() string { return "not-a-jwt" },
+			authz: func(tok string) string { return "Basic " + tok },
 		},
 		{
 			name: "expired token",
@@ -179,13 +211,29 @@ func TestHandleUserInfo_BadToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/oauth2/userinfo", nil)
-			if tok := tt.token(); tok != "" {
-				req.Header.Set("Authorization", "Bearer "+tok)
+			token := tt.token()
+			switch {
+			case tt.authz != nil:
+				req.Header.Set("Authorization", tt.authz(token))
+			case token != "":
+				req.Header.Set("Authorization", "Bearer "+token)
 			}
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
 
 			assert.Equal(t, http.StatusUnauthorized, rec.Code)
+			assertBearerChallenge(t, rec)
 		})
 	}
+}
+
+// assertBearerChallenge verifies the RFC 6750 §3 WWW-Authenticate challenge of
+// a 401 UserInfo response.
+func assertBearerChallenge(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+
+	challenge := rec.Header().Get("WWW-Authenticate")
+	assert.Contains(t, challenge, `Bearer`)
+	assert.Contains(t, challenge, `error="invalid_token"`)
+	assert.Contains(t, challenge, `error_description="`)
 }
