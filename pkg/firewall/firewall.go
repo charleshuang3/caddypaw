@@ -2,6 +2,7 @@ package firewall
 
 import (
 	"log"
+	"net"
 	"time"
 
 	"github.com/adrianbrad/queue"
@@ -108,9 +109,10 @@ func (s *Firewall) loop() {
 }
 
 func (s *Firewall) inWhitelist(ip string) bool {
-	// IP may come from runtime sources; unparseable input must not crash the
-	// process, treat it as not whitelisted.
-	parsed := parseIPOrNil(ip)
+	// The IP comes from a runtime source (an HTTP request), so it can be
+	// anything. Unparseable input must not crash the process, and an IP that
+	// cannot be parsed is not whitelisted: fail closed, keep counting it.
+	parsed := net.ParseIP(ip)
 	if parsed == nil {
 		return false
 	}

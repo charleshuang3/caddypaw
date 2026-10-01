@@ -13,26 +13,29 @@ type ipMatcher struct {
 }
 
 func newIPMatcher(rule string) *ipMatcher {
-	s := strings.Split(rule, "/")
-	if len(s) == 1 {
-		return &ipMatcher{ip: parseIP(s[0])}
+	ipStr, maskStr, hasMask := strings.Cut(rule, "/")
+	ip := parseIP(ipStr)
+
+	if !hasMask {
+		return &ipMatcher{ip: ip}
 	}
 
-	if len(s) == 2 {
-		m, err := strconv.Atoi(s[1])
-		if err != nil {
-			log.Fatalf("parse ip mask %q failed: %v", s[1], err)
-		}
-		return &ipMatcher{
-			network: &net.IPNet{
-				IP:   parseIP(s[0]),
-				Mask: net.CIDRMask(m, 32),
-			},
-		}
+	bits := 8 * net.IPv4len
+	if ip.To4() == nil {
+		bits = 8 * net.IPv6len
 	}
 
-	log.Fatalf("parse whitelist rule %q failed", rule)
-	return nil
+	m, err := strconv.Atoi(maskStr)
+	if err != nil || m < 0 || m > bits {
+		log.Fatalf("parse ip mask %q in whitelist rule %q failed", maskStr, rule)
+	}
+
+	return &ipMatcher{
+		network: &net.IPNet{
+			IP:   ip,
+			Mask: net.CIDRMask(m, bits),
+		},
+	}
 }
 
 func (s *ipMatcher) match(ip net.IP) bool {
@@ -48,21 +51,10 @@ func (s *ipMatcher) match(ip net.IP) bool {
 
 func parseIP(s string) net.IP {
 	// This is safe to crash, as the ip is from config
-	ip := parseIPOrNil(s)
+	ip := net.ParseIP(s)
 	if ip == nil {
-		log.Fatalf("net.ParseIP(%q) failed", s)
+		log.Fatalf("whitelist entry %q is not a valid IP", s)
 	}
 
 	return ip
-}
-
-// parseIPOrNil parses a runtime-supplied IP (e.g. from an HTTP request). It
-// never crashes: unparseable or non-IPv4 input returns nil.
-func parseIPOrNil(s string) net.IP {
-	ip := net.ParseIP(s)
-	if ip == nil {
-		return nil
-	}
-
-	return ip.To4()
 }

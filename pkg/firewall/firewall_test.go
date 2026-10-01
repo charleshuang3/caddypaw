@@ -172,6 +172,8 @@ func TestLogIPError(t *testing.T) {
 			expectLog:         false,
 		},
 		{
+			// Fail closed: an IP that cannot be parsed is not whitelisted, so it
+			// is still counted and banned instead of crashing the process.
 			name:              "Log error with unparseable IP, must not crash",
 			ip:                "192.168.1.1:54321", // host:port, unparseable as IP
 			reason:            "Invalid password",
@@ -192,6 +194,17 @@ func TestLogIPError(t *testing.T) {
 			expectedBanned:    false,
 			expectedLogAction: "count error",
 			expectLog:         true,
+		},
+		{
+			name:              "Log error for whitelisted IPv6 IP",
+			ip:                "2001:db8::1",
+			reason:            "Invalid password",
+			forgivable:        ForgivableError{Duration: time.Minute, Count: 3, BanInMinute: 5},
+			errorCount:        5,
+			whiteList:         []string{"2001:db8::/32"},
+			expectedBanned:    false,
+			expectedLogAction: "whitelisted",
+			expectLog:         false,
 		},
 	}
 

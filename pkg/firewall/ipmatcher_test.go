@@ -27,6 +27,19 @@ func TestNewIPMatcher(t *testing.T) {
 				Mask: net.CIDRMask(8, 32),
 			},
 		},
+		{
+			name:       "single IPv6 IP",
+			rule:       "2001:db8::1",
+			expectedIP: net.ParseIP("2001:db8::1"),
+		},
+		{
+			name: "IPv6 CIDR notation",
+			rule: "2001:db8::/32",
+			expectedNet: &net.IPNet{
+				IP:   net.ParseIP("2001:db8::"),
+				Mask: net.CIDRMask(32, 128),
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -92,6 +105,54 @@ func TestIPMatcher_Match(t *testing.T) {
 			ipToMatch: "192.168.1.255",
 			expected:  true,
 		},
+		{
+			name:      "IPv6 single IP match",
+			rule:      "2001:db8::1",
+			ipToMatch: "2001:db8::1",
+			expected:  true,
+		},
+		{
+			name:      "IPv6 single IP no match",
+			rule:      "2001:db8::1",
+			ipToMatch: "2001:db8::2",
+			expected:  false,
+		},
+		{
+			name:      "IPv6 loopback match",
+			rule:      "::1",
+			ipToMatch: "::1",
+			expected:  true,
+		},
+		{
+			name:      "IPv6 CIDR match",
+			rule:      "2001:db8::/32",
+			ipToMatch: "2001:db8:1::7",
+			expected:  true,
+		},
+		{
+			name:      "IPv6 CIDR no match",
+			rule:      "2001:db8::/32",
+			ipToMatch: "2001:db9::1",
+			expected:  false,
+		},
+		{
+			name:      "IPv6 full mask match",
+			rule:      "2001:db8::1/128",
+			ipToMatch: "2001:db8::1",
+			expected:  true,
+		},
+		{
+			name:      "IPv4 rule does not match IPv6 ip",
+			rule:      "192.168.1.0/24",
+			ipToMatch: "2001:db8::1",
+			expected:  false,
+		},
+		{
+			name:      "IPv6 rule does not match IPv4 ip",
+			rule:      "2001:db8::/32",
+			ipToMatch: "192.168.1.3",
+			expected:  false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -101,7 +162,7 @@ func TestIPMatcher_Match(t *testing.T) {
 			if ip == nil {
 				t.Fatalf("Invalid IP in test case: %s", tt.ipToMatch)
 			}
-			assert.Equal(t, tt.expected, matcher.match(ip.To4()), "ipMatcher.match() for rule %q with IP %q", tt.rule, tt.ipToMatch)
+			assert.Equal(t, tt.expected, matcher.match(ip), "ipMatcher.match() for rule %q with IP %q", tt.rule, ip)
 		})
 	}
 }
