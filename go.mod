@@ -4,7 +4,7 @@ go 1.27.1
 
 require (
 	bitbucket.org/creachadair/stringset v0.0.14
-	cloud.google.com/go/logging v1.19.1
+	cloud.google.com/go/logging v1.20.0
 	github.com/adrianbrad/queue v1.7.0
 	github.com/badoux/checkmail v1.2.4
 	github.com/caddyserver/caddy/v2 v2.11.4
@@ -16,25 +16,25 @@ require (
 	github.com/go-routeros/routeros/v3 v3.0.1
 	github.com/goccy/go-yaml v1.19.2
 	github.com/hashicorp/go-set/v3 v3.0.1
-	github.com/lestrrat-go/jwx/v3 v3.2.0
+	github.com/lestrrat-go/jwx/v3 v3.3.0
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/rs/zerolog v1.35.1
 	github.com/stretchr/testify v1.12.1
 	go.uber.org/zap v1.28.0
-	golang.org/x/crypto v0.56.0
-	golang.org/x/oauth2 v0.36.0
-	golang.org/x/time v0.15.0
-	google.golang.org/api v0.297.0
-	gorm.io/driver/postgres v1.6.2
+	golang.org/x/crypto v0.57.0
+	golang.org/x/oauth2 v0.37.0
+	golang.org/x/time v0.16.0
+	google.golang.org/api v0.299.0
+	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
 )
 
 require (
 	cel.dev/expr v0.25.3 // indirect
 	cloud.google.com/go v0.123.0 // indirect
-	cloud.google.com/go/auth v0.23.2 // indirect
+	cloud.google.com/go/auth v0.23.3 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
-	cloud.google.com/go/compute/metadata v0.9.0 // indirect
+	cloud.google.com/go/compute/metadata v0.9.1 // indirect
 	cloud.google.com/go/longrunning v1.2.0 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	filippo.io/bigmod v0.1.0 // indirect
@@ -91,9 +91,9 @@ require (
 	github.com/google/certificate-transparency-go v1.1.8-0.20240110162603-74a5dd331745 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/google/go-tspi v0.3.0 // indirect
-	github.com/google/s2a-go v0.1.9 // indirect
+	github.com/google/s2a-go v0.1.10 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.3.21 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.22 // indirect
 	github.com/googleapis/gax-go/v2 v2.24.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/huandu/xstrings v1.5.0 // indirect
@@ -210,15 +210,15 @@ require (
 	golang.org/x/arch v0.22.0 // indirect
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20260902180247-86efde54dc70 // indirect
 	golang.org/x/exp v0.0.0-20260824195058-e88cd73687aa // indirect
-	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/term v0.45.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/term v0.46.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/genproto v0.0.0-20260715232425-e75dac1f907d // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260831171406-18b4a7587f8a // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260831171406-18b4a7587f8a // indirect
-	google.golang.org/grpc v1.83.2 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260921155816-b14227669459 // indirect
+	google.golang.org/grpc v1.84.0 // indirect
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.6.2 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
