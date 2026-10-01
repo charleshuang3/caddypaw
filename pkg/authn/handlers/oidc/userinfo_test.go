@@ -125,6 +125,13 @@ func TestHandleUserInfo(t *testing.T) {
 			scopes:         []string{"openid"},
 			expectedStatus: http.StatusUnauthorized,
 		},
+		{
+			// The subject is a username, so an email address must not resolve.
+			name:           "email as subject",
+			subject:        "existing@example.com",
+			scopes:         []string{"openid", "email"},
+			expectedStatus: http.StatusUnauthorized,
+		},
 	}
 
 	for _, tt := range tests {

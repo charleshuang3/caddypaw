@@ -76,7 +76,10 @@ func (o *OpenIDProvider) handleUserInfo(c *gin.Context) {
 		return false
 	}
 
-	user, err := storage.GetUserByUsernameOrEmail(o.db, subject)
+	// The subject of an access token is always the username
+	// (genAccessToken), never the email address; looking users up by both
+	// could return another account whose email equals this username.
+	user, err := storage.GetUserByUsername(o.db, subject)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeUserInfoError(c, "unknown subject")
