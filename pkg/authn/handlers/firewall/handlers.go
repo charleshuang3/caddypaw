@@ -1,7 +1,6 @@
 package firewall
 
 import (
-	"net"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -13,28 +12,36 @@ func (f *Firewall) RegisterHandlers(rg *gin.RouterGroup) {
 }
 
 type firewallRequest struct {
-	IP     string `form:"ip" binding:"required,ip"`
+	IP     string `form:"ip" binding:"ip"`
 	Reason string `form:"reason" binding:"required"`
 }
 
-func (f *Firewall) ban(c *gin.Context) {
-	firewallRequest := &firewallRequest{}
-
-	if err := c.ShouldBind(firewallRequest); err != nil || net.ParseIP(firewallRequest.IP) == nil {
+// bindRequest binds and validates the query parameters shared by /ban and
+// /logerr. On failure it answers 400 and returns nil.
+func bindRequest(c *gin.Context) *firewallRequest {
+	req := &firewallRequest{}
+	if err := c.ShouldBind(req); err != nil {
 		c.String(http.StatusBadRequest, "Missing or invalid parameters")
+		return nil
+	}
+
+	return req
+}
+
+func (f *Firewall) ban(c *gin.Context) {
+	req := bindRequest(c)
+	if req == nil {
 		return
 	}
 
-	f.fw.BanIP(firewallRequest.IP, int(f.conf.BanMinutes), firewallRequest.Reason)
+	f.fw.BanIP(req.IP, int(f.conf.BanMinutes), req.Reason)
 }
 
 func (f *Firewall) logError(c *gin.Context) {
-	firewallRequest := &firewallRequest{}
-
-	if err := c.ShouldBind(firewallRequest); err != nil || net.ParseIP(firewallRequest.IP) == nil {
-		c.String(http.StatusBadRequest, "Missing or invalid parameters")
+	req := bindRequest(c)
+	if req == nil {
 		return
 	}
 
-	f.fw.LogIPError(firewallRequest.IP, firewallRequest.Reason)
+	f.fw.LogIPError(req.IP, req.Reason)
 }

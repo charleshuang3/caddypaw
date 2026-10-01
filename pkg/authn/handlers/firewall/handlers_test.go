@@ -84,6 +84,15 @@ func TestHandlers(t *testing.T) {
 			expectedAction: "",
 		},
 		{
+			name:           "logerr ipv6 success",
+			path:           "/logerr",
+			ip:             "2001:db8::1",
+			reason:         "test logerr",
+			expectedStatus: http.StatusOK,
+			expectedLog:    true,
+			expectedAction: "count error",
+		},
+		{
 			name:           "logerr invalid ip with port",
 			path:           "/logerr",
 			ip:             "2.2.2.2:54321",
