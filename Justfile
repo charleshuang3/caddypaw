@@ -50,7 +50,7 @@ fmt-check:
 
 # Build authn Docker image
 build-authn-image:
-    docker build -t ghcr.io/charleshuang3/authn:main -f pkg/authn/Dockerfile .
+    docker build -t ghcr.io/charleshuang3/authn:main -f Dockerfile.authn .
 
 # Build caddy Docker image
 build-caddy-image:
