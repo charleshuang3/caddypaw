@@ -208,6 +208,13 @@ func (a *authModule) ServeHTTP(w http.ResponseWriter, r *http.Request, next cadd
 			c.Write(zap.Error(err), zap.String("url", r.RequestURI))
 		}
 		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
+	case http.StatusBadGateway:
+		// authn server unavailable (5xx / network error); fail instead of
+		// redirecting, which would risk a redirect loop.
+		if c := a.logger.Check(zapcore.ErrorLevel, "authn server error"); c != nil {
+			c.Write(zap.Error(err), zap.String("url", r.RequestURI))
+		}
+		return caddyhttp.Error(http.StatusBadGateway, fmt.Errorf("authn server error"))
 	case http.StatusInternalServerError:
 		// Have error, return 500 error to client
 		if c := a.logger.Check(zapcore.ErrorLevel, "internal error"); c != nil {

@@ -2,6 +2,7 @@ package caddypaw
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"golang.org/x/oauth2"
 
 	"github.com/charleshuang3/caddypaw/pkg/caddypaw/config"
 	"github.com/charleshuang3/caddypaw/pkg/caddypaw/testdata"
@@ -500,6 +502,101 @@ func TestCheckServerCookies_refreshToken_Error(t *testing.T) {
 	assert.Equal(t, http.StatusFound, code)
 	assert.Nil(t, user)
 	assert.NoError(t, err)
+}
+
+func TestClassifyTokenError(t *testing.T) {
+	tests := []struct {
+		name        string
+		err         error
+		restartFlow bool
+	}{
+		{
+			name:        "nil",
+			err:         nil,
+			restartFlow: false,
+		},
+		{
+			name:        "retrieve error 400",
+			err:         &oauth2.RetrieveError{Response: &http.Response{StatusCode: http.StatusBadRequest}},
+			restartFlow: true,
+		},
+		{
+			name:        "retrieve error 401",
+			err:         &oauth2.RetrieveError{Response: &http.Response{StatusCode: http.StatusUnauthorized}},
+			restartFlow: true,
+		},
+		{
+			name:        "retrieve error 500",
+			err:         &oauth2.RetrieveError{Response: &http.Response{StatusCode: http.StatusInternalServerError}},
+			restartFlow: false,
+		},
+		{
+			name:        "retrieve error 503",
+			err:         &oauth2.RetrieveError{Response: &http.Response{StatusCode: http.StatusServiceUnavailable}},
+			restartFlow: false,
+		},
+		{
+			name:        "network error",
+			err:         &url.Error{Op: "Post", Err: errors.New("connection refused")},
+			restartFlow: false,
+		},
+		{
+			name:        "wrapped retrieve error 500",
+			err:         fmt.Errorf("exchange: %w", &oauth2.RetrieveError{Response: &http.Response{StatusCode: http.StatusInternalServerError}}),
+			restartFlow: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.restartFlow, classifyTokenError(tt.err))
+		})
+	}
+}
+
+// TestCheckServerCookies_callback_ServerError verifies that a 5xx from the
+// authn token endpoint does not trigger a redirect (avoiding loops) but
+// returns 502 instead.
+func TestCheckServerCookies_callback_ServerError(t *testing.T) {
+	mockServer, testServer := setupMockAuthnServer(t)
+	a := newAuthModule(t, testServer, authTypeServerCookies)
+
+	mockServer.responseCode = http.StatusInternalServerError
+	st := a.storeURLAndGenState("http://example.com/path")
+	a.stateCache.Wait()
+
+	w := httptest.NewRecorder()
+	q := url.Values{}
+	q.Set("code", "test-code")
+	q.Set("state", st)
+	r := httptest.NewRequest(http.MethodGet, defaultCallbackURL+"?"+q.Encode(), nil)
+
+	code, _, err := a.checkServerCookies(w, r)
+
+	assert.Equal(t, http.StatusBadGateway, code)
+	require.Error(t, err)
+	assert.Empty(t, w.Header().Get("Location"), "must not redirect on server errors")
+}
+
+// TestCheckServerCookies_refreshToken_ServerError verifies the refresh path
+// returns 502 on authn 5xx instead of redirecting to authorize.
+func TestCheckServerCookies_refreshToken_ServerError(t *testing.T) {
+	mockServer, testServer := setupMockAuthnServer(t)
+	a := newAuthModule(t, testServer, authTypeServerCookies)
+
+	expiredAccessToken := genAccessToken(t, a.authnConfig.Issuer, time.Now().Add(-time.Hour), a.ClientID, validUser())
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: cookieKeyAccessToken, Value: expiredAccessToken})
+	req.AddCookie(&http.Cookie{Name: cookieKeyRefreshToken, Value: "some-refresh-token"})
+
+	mockServer.responseCode = http.StatusInternalServerError
+
+	w := httptest.NewRecorder()
+	code, _, err := a.checkServerCookies(w, req)
+
+	assert.Equal(t, http.StatusBadGateway, code)
+	require.Error(t, err)
+	assert.Empty(t, w.Header().Get("Location"), "must not redirect on server errors")
 }
 
 func TestCheckServerCookies_withAccessToken(t *testing.T) {

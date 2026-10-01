@@ -64,6 +64,20 @@ func (a *authModule) redirectToAuthorize(w http.ResponseWriter, r *http.Request)
 	return http.StatusFound, nil, nil
 }
 
+// classifyTokenError inspects a token endpoint / network failure and reports
+// whether the gateway should restart the auth flow (4xx protocol errors mean
+// the token/grant is gone) or fail outright (5xx / network errors mean the
+// authn server is unreachable; redirecting would risk a redirect loop).
+func classifyTokenError(err error) (restartAuthFlow bool) {
+	var retrieveErr *oauth2.RetrieveError
+	if errors.As(err, &retrieveErr) && retrieveErr.Response != nil {
+		return retrieveErr.Response.StatusCode < 500
+	}
+	// Non-HTTP errors (connection refused, timeouts, ...) are infrastructure
+	// failures: do not redirect.
+	return false
+}
+
 // handleDefaultCallback handles the callback from authn server
 // 1. oauth2 code flow for tokens.
 // 2. redirect the user to pre-auth url.
@@ -95,6 +109,10 @@ func (a *authModule) handleDefaultCallback(w http.ResponseWriter, r *http.Reques
 	ctx := context.WithValue(r.Context(), oauth2.HTTPClient, httpClient)
 	tokens, err := a.oauth2Config.Exchange(ctx, code)
 	if err != nil {
+		if !classifyTokenError(err) {
+			a.logger.Error("token exchange failed with server error", zap.Error(err))
+			return http.StatusBadGateway, nil, err
+		}
 		return http.StatusUnauthorized, nil, err
 	}
 
@@ -173,6 +191,10 @@ func (a *authModule) refreshToken(w http.ResponseWriter, r *http.Request) (int, 
 
 	tokens, err := ts.Token()
 	if err != nil {
+		if !classifyTokenError(err) {
+			a.logger.Error("token refresh failed with server error", zap.Error(err), zap.String("path", r.URL.Path))
+			return http.StatusBadGateway, nil, err
+		}
 		// This may happen if refresh token also expired.
 		a.logger.Info("refresh token exchange failed, redirecting to authorize", zap.Error(err), zap.String("path", r.URL.Path))
 		return a.redirectToAuthorize(w, r)
