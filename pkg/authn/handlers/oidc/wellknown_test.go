@@ -52,7 +52,7 @@ func TestHandleWellKnownConfig(t *testing.T) {
 		JWKSURI:               "http://localhost:8080/oauth2/.well-known/jwks.json",
 		ResponseTypes:         []string{"code"}, // only code flow is supported
 		GrantTypes:            []string{"authorization_code", "refresh_token"},
-		TokenEndpointAuth:     []string{"client_secret_post"},
+		TokenEndpointAuth:     []string{"client_secret_post", "client_secret_basic"},
 		Scopes: []string{
 			"openid",
 			"profile",

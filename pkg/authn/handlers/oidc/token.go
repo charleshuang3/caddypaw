@@ -46,12 +46,37 @@ type handleTokenResponse struct {
 }
 
 type handleTokenAuthorizationCodeParams struct {
-	Code         string `form:"code" binding:"required"`
-	ClientID     string `form:"client_id" binding:"required"`
-	ClientSecret string `form:"client_secret" binding:"required"`
+	Code string `form:"code" binding:"required"`
 	// RedirectURI is optional for backward compatibility; when present it must
 	// match the redirect_uri of the authorization request (RFC 6749 §4.1.3).
-	RedirectURI string `form:"redirect_uri"`
+	RedirectURI  string `form:"redirect_uri"`
+	ClientID     string
+	ClientSecret string
+}
+
+// clientCredentials extracts client_id/client_secret for client
+// authentication. Both client_secret_post (form values, RFC 6749 §2.3.1) and
+// client_secret_basic (HTTP Basic) are supported; when both are present they
+// must agree, otherwise the request is rejected.
+func clientCredentials(c *gin.Context) (clientID, clientSecret string, err error) {
+	formID := c.PostForm("client_id")
+	formSecret := c.PostForm("client_secret")
+
+	basicID, basicSecret, hasBasic := c.Request.BasicAuth()
+
+	switch {
+	case hasBasic && formID != "" && (formID != basicID || formSecret != basicSecret):
+		return "", "", fmt.Errorf("conflicting client credentials")
+	case hasBasic:
+		return basicID, basicSecret, nil
+	case formID != "":
+		if formSecret == "" {
+			return "", "", fmt.Errorf("missing client_secret")
+		}
+		return formID, formSecret, nil
+	default:
+		return "", "", fmt.Errorf("missing client credentials")
+	}
 }
 
 func (o *OpenIDProvider) handleTokenAuthorizationCode(c *gin.Context) {
@@ -59,6 +84,13 @@ func (o *OpenIDProvider) handleTokenAuthorizationCode(c *gin.Context) {
 
 	if err := c.ShouldBind(params); err != nil {
 		responseTokenError(c, http.StatusBadRequest, "invalid_request", "Missing required parameters")
+		return
+	}
+
+	var err error
+	params.ClientID, params.ClientSecret, err = clientCredentials(c)
+	if err != nil {
+		responseTokenError(c, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 
@@ -127,8 +159,8 @@ func (o *OpenIDProvider) handleTokenAuthorizationCode(c *gin.Context) {
 
 type handleTokenRefreshTokenParams struct {
 	RefreshToken string `form:"refresh_token" binding:"required"`
-	ClientID     string `form:"client_id" binding:"required"`
-	ClientSecret string `form:"client_secret" binding:"required"`
+	ClientID     string
+	ClientSecret string
 }
 
 func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
@@ -136,6 +168,13 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 
 	if err := c.ShouldBind(params); err != nil {
 		responseTokenError(c, http.StatusBadRequest, "invalid_request", "Missing required parameters")
+		return
+	}
+
+	var err error
+	params.ClientID, params.ClientSecret, err = clientCredentials(c)
+	if err != nil {
+		responseTokenError(c, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 

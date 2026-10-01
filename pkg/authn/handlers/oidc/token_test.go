@@ -352,6 +352,84 @@ func TestHandleTokenAuthorizationCode_Success(t *testing.T) {
 	}
 }
 
+func TestHandleTokenAuthorizationCode_ClientAuthMethods(t *testing.T) {
+	tests := []struct {
+		name            string
+		useBasicAuth    bool
+		conflictBasic   bool
+		expectedStatus  int
+		expectedSuccess bool
+	}{
+		{
+			name:            "client_secret_basic",
+			useBasicAuth:    true,
+			expectedStatus:  http.StatusOK,
+			expectedSuccess: true,
+		},
+		{
+			name:            "basic and post credentials agree",
+			useBasicAuth:    true,
+			expectedStatus:  http.StatusOK,
+			expectedSuccess: true,
+		},
+		{
+			name:           "basic and post credentials conflict",
+			useBasicAuth:   true,
+			conflictBasic:  true,
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider, _, router := setupTestProviderForTokenRequest(t)
+
+			authCodeValue := "valid-code"
+			provider.authCodeStorage.Set(authCodeValue, &storage.AuthCode{
+				ClientID: "existing-client",
+				UserID:   1,
+				Scopes:   []string{"openid"},
+			})
+
+			formData := url.Values{
+				"grant_type": {"authorization_code"},
+				"code":       {authCodeValue},
+			}
+
+			if tt.useBasicAuth {
+				secret := "correct-secret"
+				if tt.conflictBasic {
+					// Same client_id in form and Basic header but different secret.
+					formData.Set("client_id", "existing-client")
+					formData.Set("client_secret", "wrong-secret")
+				} else {
+					// Provide identical values in both places.
+					formData.Set("client_id", "existing-client")
+					formData.Set("client_secret", secret)
+				}
+			}
+
+			req, err := http.NewRequest(http.MethodPost, "/oauth2/token", strings.NewReader(formData.Encode()))
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if tt.useBasicAuth {
+				req.SetBasicAuth("existing-client", "correct-secret")
+			}
+
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			assert.Equal(t, tt.expectedStatus, rec.Code, "Body: %s", rec.Body.String())
+			if tt.expectedSuccess {
+				var resp handleTokenResponse
+				err = json.Unmarshal(rec.Body.Bytes(), &resp)
+				require.NoError(t, err)
+				assert.NotEmpty(t, resp.AccessToken)
+			}
+		})
+	}
+}
+
 func TestHandleTokenRefreshToken_Success(t *testing.T) {
 	tests := []struct {
 		name       string
