@@ -7,10 +7,10 @@ require (
 	github.com/caddyserver/caddy/v2 v2.11.4
 	github.com/dgraph-io/ristretto/v2 v2.4.2
 	github.com/goccy/go-yaml v1.19.2
-	github.com/lestrrat-go/jwx/v3 v3.2.0
+	github.com/lestrrat-go/jwx/v3 v3.3.0
 	github.com/stretchr/testify v1.12.1
 	go.uber.org/zap v1.28.0
-	golang.org/x/oauth2 v0.36.0
+	golang.org/x/oauth2 v0.37.0
 )
 
 require (
