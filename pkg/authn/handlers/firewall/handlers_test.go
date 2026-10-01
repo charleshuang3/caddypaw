@@ -83,6 +83,33 @@ func TestHandlers(t *testing.T) {
 			expectedLog:    false,
 			expectedAction: "",
 		},
+		{
+			name:           "logerr invalid ip with port",
+			path:           "/logerr",
+			ip:             "2.2.2.2:54321",
+			reason:         "test logerr",
+			expectedStatus: http.StatusBadRequest,
+			expectedLog:    false,
+			expectedAction: "",
+		},
+		{
+			name:           "logerr garbage ip",
+			path:           "/logerr",
+			ip:             "not-an-ip",
+			reason:         "test logerr",
+			expectedStatus: http.StatusBadRequest,
+			expectedLog:    false,
+			expectedAction: "",
+		},
+		{
+			name:           "ban invalid ip",
+			path:           "/ban",
+			ip:             "not-an-ip",
+			reason:         "test ban",
+			expectedStatus: http.StatusBadRequest,
+			expectedLog:    false,
+			expectedAction: "",
+		},
 	}
 
 	for _, tt := range tests {

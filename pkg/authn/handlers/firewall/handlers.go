@@ -1,6 +1,7 @@
 package firewall
 
 import (
+	"net"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -12,15 +13,15 @@ func (f *Firewall) RegisterHandlers(rg *gin.RouterGroup) {
 }
 
 type firewallRequest struct {
-	IP     string `form:"ip" binding:"required"`
+	IP     string `form:"ip" binding:"required,ip"`
 	Reason string `form:"reason" binding:"required"`
 }
 
 func (f *Firewall) ban(c *gin.Context) {
 	firewallRequest := &firewallRequest{}
 
-	if err := c.ShouldBind(firewallRequest); err != nil {
-		c.String(http.StatusBadRequest, "Missing required parameters")
+	if err := c.ShouldBind(firewallRequest); err != nil || net.ParseIP(firewallRequest.IP) == nil {
+		c.String(http.StatusBadRequest, "Missing or invalid parameters")
 		return
 	}
 
@@ -30,8 +31,8 @@ func (f *Firewall) ban(c *gin.Context) {
 func (f *Firewall) logError(c *gin.Context) {
 	firewallRequest := &firewallRequest{}
 
-	if err := c.ShouldBind(firewallRequest); err != nil {
-		c.String(http.StatusBadRequest, "Missing required parameters")
+	if err := c.ShouldBind(firewallRequest); err != nil || net.ParseIP(firewallRequest.IP) == nil {
+		c.String(http.StatusBadRequest, "Missing or invalid parameters")
 		return
 	}
 
