@@ -15,8 +15,7 @@ func TestStandalonePawWAF_BlockAndBan(t *testing.T) {
 	gwYAML := testenv.WriteAuthnGatewayYAML(t,
 		c.AuthnURL, c.AuthnURL+"/oauth2/token", c.AuthnURL+"/user/info", c.FirewallURL)
 
-	const caddyfileStandalone = `
-{
+	const caddyfileStandalone = `{
 	authn_yaml_file {authn_yaml_file}
 	order paw_waf before basic_auth
 	skip_install_trust
@@ -63,8 +62,7 @@ func TestPawAuthEmbeddedWAF_BlockAndBan(t *testing.T) {
 	gwYAML := testenv.WriteAuthnGatewayYAML(t,
 		c.AuthnURL, c.AuthnURL+"/oauth2/token", c.AuthnURL+"/user/info", c.FirewallURL)
 
-	const caddyfileEmbedded = `
-{
+	const caddyfileEmbedded = `{
 	authn_yaml_file {authn_yaml_file}
 	order paw_auth before basic_auth
 	skip_install_trust
@@ -149,8 +147,7 @@ func TestOWASPCRS_LoadingAndInspection(t *testing.T) {
 	gwYAML := testenv.WriteAuthnGatewayYAML(t,
 		c.AuthnURL, c.AuthnURL+"/oauth2/token", c.AuthnURL+"/user/info", c.FirewallURL)
 
-	const caddyfileCRS = `
-{
+	const caddyfileCRS = `{
 	authn_yaml_file {authn_yaml_file}
 	order paw_waf before basic_auth
 	skip_install_trust

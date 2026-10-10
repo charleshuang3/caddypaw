@@ -72,4 +72,3 @@ app3.example.com:8443 {
 
 	respond "Hi, This is app3" 200
 }
-

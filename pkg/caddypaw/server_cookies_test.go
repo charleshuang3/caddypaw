@@ -719,7 +719,6 @@ func TestCheckServerCookies_refreshToken_InvalidGrant(t *testing.T) {
 func TestCheckServerCookies_callback_AuthorizeError(t *testing.T) {
 	mockServer, testServer := setupMockAuthnServer(t)
 	a := newAuthModule(t, testServer, authTypeServerCookies)
-	a.authnConfig.FirewallURL = testServer.URL
 
 	q := url.Values{}
 	q.Set("error", "invalid_scope")

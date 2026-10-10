@@ -12,8 +12,7 @@ import (
 	"github.com/charleshuang3/caddypaw/test/e2e/testenv"
 )
 
-const caddyfile = `
-{
+const caddyfile = `{
 	authn_yaml_file {authn_yaml_file}
 	order paw_auth before basic_auth
 	skip_install_trust

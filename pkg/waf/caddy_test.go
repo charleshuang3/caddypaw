@@ -33,6 +33,12 @@ func (m *mockGlobalOption) FirewallURL() string {
 	return m.firewallURL
 }
 
+var testMockGlobalOption = &mockGlobalOption{}
+
+func init() {
+	caddy.RegisterModule(testMockGlobalOption)
+}
+
 func TestWAFModule_CaddyModule(t *testing.T) {
 	m := wafModule{}
 	info := m.CaddyModule()
@@ -151,14 +157,12 @@ func TestWAFModule_Provision(t *testing.T) {
 	})
 
 	t.Run("with paw_global_option sets firewallURL", func(t *testing.T) {
-		mockApp := &mockGlobalOption{firewallURL: "http://127.0.0.1:9999"}
+		testMockGlobalOption.firewallURL = "http://127.0.0.1:9999"
 		cfg := &caddy.Config{
 			AppsRaw: caddy.ModuleMap{
 				"paw_global_option": []byte(`{}`),
 			},
 		}
-		// Register dummy app module for test
-		caddy.RegisterModule(mockApp)
 
 		ctx, err := caddy.ProvisionContext(cfg)
 		require.NoError(t, err)
