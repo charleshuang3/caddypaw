@@ -28,6 +28,40 @@ type Config struct {
 const defaultPresetDirectives = `Include @coraza.conf-recommended
 SecRuleEngine On
 Include @crs-setup.conf.example
+
+# Relax inbound anomaly score threshold (default 5 is too strict for single false positives)
+SecAction \
+    "id:10000,\
+    phase:1,\
+    nolog,\
+    pass,\
+    setvar:tx.inbound_anomaly_score_threshold=10,\
+    setvar:tx.outbound_anomaly_score_threshold=5"
+
+# Allow text/plain in addition to default content types (used by Socket.IO / Engine.IO polling payloads)
+SecAction \
+    "id:10001,\
+    phase:1,\
+    nolog,\
+    pass,\
+    setvar:'tx.allowed_request_content_type=|application/x-www-form-urlencoded| |multipart/form-data| |multipart/related| |text/xml| |application/xml| |application/soap+xml| |application/json| |application/cloudevents+json| |text/plain|'"
+
+# Exclude rule 930120 (OS File Access) on ARGS:scope for SSO callbacks (matches .profile in userinfo.profile)
+SecRule REQUEST_URI "@rx ^/sso/.*callback" \
+    "id:10002,\
+    phase:1,\
+    pass,\
+    nolog,\
+    ctl:ruleRemoveTargetById=930120;ARGS:scope"
+
+# Exclude rule 920420 (Content-Type enforcement) on /socket.io/ endpoints
+SecRule REQUEST_URI "@beginsWith /socket.io/" \
+    "id:10003,\
+    phase:1,\
+    pass,\
+    nolog,\
+    ctl:ruleRemoveById=920420"
+
 Include @owasp_crs/*.conf`
 
 // UnmarshalCaddyfile parses the WAF configuration from a Caddyfile block.

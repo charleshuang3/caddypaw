@@ -132,6 +132,44 @@ Include @owasp_crs/*.conf
 	assert.Equal(t, 0, status)
 }
 
+func TestWAF_PresetDefault_TunedAllowances(t *testing.T) {
+	cfg := &Config{
+		Preset: "default",
+	}
+
+	logger := zaptest.NewLogger(t)
+	wafEngine, err := NewWAF(cfg, logger)
+	require.NoError(t, err)
+
+	// 1. Google SSO Callback with scope containing .profile (must NOT trigger 930120 / 949110)
+	ssoReq := httptest.NewRequest(http.MethodGet, "http://example.com/sso/google/callback?state=123&scope=email+profile+https://www.googleapis.com/auth/userinfo.profile", http.NoBody)
+	ssoReq.RemoteAddr = "10.0.0.1:12345"
+	interrupted, status, ruleID, err := wafEngine.ProcessRequest(ssoReq)
+	require.NoError(t, err)
+	assert.False(t, interrupted, "SSO callback should not be blocked")
+	assert.Equal(t, 0, status)
+	assert.Equal(t, 0, ruleID)
+
+	// 2. Socket.IO polling request with text/plain (must NOT trigger 920420 / 949110)
+	socketReq := httptest.NewRequest(http.MethodPost, "http://example.com/socket.io/?EIO=4&transport=polling&sid=xyz", strings.NewReader("40"))
+	socketReq.Header.Set("Content-Type", "text/plain;charset=UTF-8")
+	socketReq.RemoteAddr = "10.0.0.1:12345"
+	interrupted, status, ruleID, err = wafEngine.ProcessRequest(socketReq)
+	require.NoError(t, err)
+	assert.False(t, interrupted, "Socket.IO polling should not be blocked")
+	assert.Equal(t, 0, status)
+	assert.Equal(t, 0, ruleID)
+
+	// 3. Attack request is still blocked
+	attackReq := httptest.NewRequest(http.MethodGet, "http://example.com/?q=1%20UNION%20SELECT%201,2,3--", http.NoBody)
+	attackReq.RemoteAddr = "10.0.0.1:12345"
+	interrupted, status, ruleID, err = wafEngine.ProcessRequest(attackReq)
+	require.NoError(t, err)
+	assert.True(t, interrupted, "SQLi attack must be blocked")
+	assert.Equal(t, http.StatusForbidden, status)
+	assert.Equal(t, 949110, ruleID)
+}
+
 func TestWAF_InterruptionStatusMapping(t *testing.T) {
 	cfg := &Config{
 		Directives: `
