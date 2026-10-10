@@ -2,6 +2,7 @@ package waf
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -15,9 +16,19 @@ import (
 
 // Config holds the configuration for Coraza WAF.
 type Config struct {
+	// Preset names a bundled rule configuration. Currently only "default"
+	// is supported: it loads the recommended Coraza base config plus the
+	// full embedded OWASP CRS. Mutually exclusive with directives.
+	Preset       string `json:"preset,omitempty"`
 	LoadOWASPCRS bool   `json:"load_owasp_crs,omitempty"`
 	Directives   string `json:"directives,omitempty"`
 }
+
+// defaultPresetDirectives is the directives block applied by preset "default".
+const defaultPresetDirectives = `Include @coraza.conf-recommended
+SecRuleEngine On
+Include @crs-setup.conf.example
+Include @owasp_crs/*.conf`
 
 // UnmarshalCaddyfile parses the WAF configuration from a Caddyfile block.
 func (c *Config) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -28,6 +39,11 @@ func (c *Config) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 			c.LoadOWASPCRS = true
+		case "preset":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			c.Preset = d.Val()
 		case "directives":
 			if !d.NextArg() {
 				return d.ArgErr()
@@ -42,8 +58,18 @@ func (c *Config) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Validate verifies that the configuration is valid.
 func (c *Config) Validate() error {
+	if c.Preset != "" {
+		if c.Preset != "default" {
+			return fmt.Errorf("unknown waf preset %q (supported: default)", c.Preset)
+		}
+		if strings.TrimSpace(c.Directives) != "" {
+			return errors.New("waf preset and directives are mutually exclusive")
+		}
+		c.LoadOWASPCRS = true
+		c.Directives = defaultPresetDirectives
+	}
 	if strings.TrimSpace(c.Directives) == "" {
-		return errors.New("waf directives cannot be empty")
+		return errors.New("waf directives cannot be empty (use preset default or provide directives)")
 	}
 	if !c.LoadOWASPCRS {
 		for _, alias := range []string{"@owasp_crs", "@crs-setup", "@coraza.conf-recommended"} {

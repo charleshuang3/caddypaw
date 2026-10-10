@@ -104,14 +104,7 @@ before they reach upstream services:
 
 example.com {
 	paw_waf {
-		load_owasp_crs
-		directives `
-			Include @coraza.conf-recommended
-			SecRuleEngine On
-			Include @crs-setup.conf.example
-			Include @owasp_crs/*.conf
-			SecRule ARGS:attack "@streq 1" "id:1001,phase:2,deny,status:403"
-		`
+		preset default
 	}
 	reverse_proxy 127.0.0.1:8080
 }
@@ -136,13 +129,7 @@ app.example.com {
 		callback_url https://app.example.com/paw/callback
 		roles admin
 		waf {
-			load_owasp_crs
-			directives `
-				Include @coraza.conf-recommended
-				SecRuleEngine On
-				Include @crs-setup.conf.example
-				Include @owasp_crs/*.conf
-			`
+			preset default
 		}
 	}
 	reverse_proxy 127.0.0.1:8080
@@ -151,6 +138,7 @@ app.example.com {
 
 ### OWASP CRS & Coraza Directives
 
+- **`preset default`**: Shorthand for the recommended full configuration — loads the embedded Coraza recommended base config plus the complete OWASP CRS (`load_owasp_crs` + the four standard `Include` lines). Mutually exclusive with `directives`. To tune CRS settings (e.g. paranoia level), keep using explicit `directives` with `SecAction setvar` overrides.
 - **`load_owasp_crs`**: Activates embedded OWASP CRS 4.x rules. You can reference:
   - `@coraza.conf-recommended` — recommended Coraza base configuration.
   - `@crs-setup.conf.example` — standard CRS initialization settings.

@@ -11,14 +11,7 @@ auth.example.com:8443 {
 # Standalone WAF protecting an upstream service
 open.example.com:8443 {
 	paw_waf {
-		load_owasp_crs
-		directives `
-			Include @coraza.conf-recommended
-			SecRuleEngine On
-			Include @crs-setup.conf.example
-			Include @owasp_crs/*.conf
-			SecRule ARGS:admin "@streq 1" "id:1001,phase:2,deny,status:403"
-		`
+		preset default
 	}
 
 	reverse_proxy 127.0.0.1:8082
@@ -31,13 +24,7 @@ app1.example.com:8443 {
 		client_secret client_secret
 		roles admin
 		waf {
-			load_owasp_crs
-			directives `
-				Include @coraza.conf-recommended
-				SecRuleEngine On
-				Include @crs-setup.conf.example
-				Include @owasp_crs/*.conf
-			`
+			preset default
 		}
 	}
 
