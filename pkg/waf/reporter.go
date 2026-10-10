@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -41,7 +42,7 @@ func NewReporterWithClient(logger *zap.Logger, firewallURL string, client *http.
 	return &Reporter{
 		httpClient:  client,
 		logger:      logger,
-		firewallURL: firewallURL,
+		firewallURL: strings.TrimRight(firewallURL, "/"),
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/goccy/go-yaml"
 	"github.com/lestrrat-go/jwx/v3/jwk"
@@ -47,6 +48,7 @@ func LoadFromFile(path string) (*AuthnConfig, error) {
 		return nil, errors.New("nonOIDCUserInfoURL cannot be empty")
 	}
 
+	res.FirewallURL = strings.TrimRight(res.FirewallURL, "/")
 	if res.FirewallURL == "" {
 		return nil, errors.New("firewallURL cannot be empty")
 	}

@@ -3,6 +3,7 @@ package waf
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -60,6 +61,26 @@ func TestReporter_ReportIP(t *testing.T) {
 	require.True(t, ok)
 	assert.Contains(t, val, "ip=10.0.0.5")
 	assert.Contains(t, val, "reason=waf%3A101")
+}
+
+func TestReporter_TrailingSlashTrimmed(t *testing.T) {
+	var requestedURI atomic.Value
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedURI.Store(r.URL.RequestURI())
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	logger := zaptest.NewLogger(t)
+	// Pass firewallURL with trailing slashes
+	reporter := NewReporter(logger, srv.URL+"///")
+
+	reporter.ReportIP("10.0.0.9", "waf:test")
+
+	val, ok := requestedURI.Load().(string)
+	require.True(t, ok)
+	assert.True(t, strings.HasPrefix(val, "/logerr?"), "URI should start with /logerr?, got %s", val)
 }
 
 func TestReporter_EmptyFirewallURL(t *testing.T) {

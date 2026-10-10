@@ -24,7 +24,7 @@ const (
 	AuthURL            = "http://example.com:8443/oauth2/authorize"
 	TokenURL           = "http://example.com:8443/oauth2/token"
 	NonOIDCUserInfoURL = "http://example.com:8443/user/info"
-	FirewallURL        = "http://127.0.0.1:8444/"
+	FirewallURL        = "http://127.0.0.1:8444"
 )
 
 // Key material re-exported from pkg/authn/testdata, the single owner.
