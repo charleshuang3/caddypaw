@@ -35,6 +35,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	_ "github.com/charleshuang3/caddypaw/pkg/caddypaw"
+	_ "github.com/charleshuang3/caddypaw/pkg/waf"
 
 	authnconfig "github.com/charleshuang3/caddypaw/pkg/authn/config"
 	"github.com/charleshuang3/caddypaw/pkg/authn/gormw"
@@ -45,6 +46,22 @@ import (
 	authntestdata "github.com/charleshuang3/caddypaw/pkg/authn/testdata"
 	"github.com/charleshuang3/caddypaw/pkg/firewall/memory"
 )
+
+// Option configures Cluster options.
+type Option func(*options)
+
+type options struct {
+	whitelist       []string
+	customWhitelist bool
+}
+
+// WithWhitelist overrides the default whitelist ([]string{"127.0.0.1"}) on the authn firewall.
+func WithWhitelist(wl []string) Option {
+	return func(o *options) {
+		o.whitelist = wl
+		o.customWhitelist = true
+	}
+}
 
 // Fixed identities shared across the E2E suite.
 const (
@@ -112,8 +129,17 @@ func (u *UpstreamEcho) Requests() []http.Header {
 
 // New starts the mock upstream and the authn server, and seeds a caddypaw
 // test user and client. Call Cluster.StartCaddy to also bring up the gateway.
-func New(t *testing.T) *Cluster {
+func New(t *testing.T, opts ...Option) *Cluster {
 	t.Helper()
+
+	var opt options
+	for _, fn := range opts {
+		fn(&opt)
+	}
+	wl := []string{"127.0.0.1"}
+	if opt.customWhitelist {
+		wl = opt.whitelist
+	}
 
 	gin.SetMode(gin.TestMode)
 
@@ -125,13 +151,13 @@ func New(t *testing.T) *Cluster {
 	t.Cleanup(c.Upstream.srv.Close)
 
 	// 2. Authn servers + seeded data.
-	c.startAuthn()
+	c.startAuthn(wl)
 	c.seed()
 
 	return c
 }
 
-func (c *Cluster) startAuthn() {
+func (c *Cluster) startAuthn(whitelist []string) {
 	t := c.t
 	t.Helper()
 
@@ -153,7 +179,7 @@ func (c *Cluster) startAuthn() {
 		Firewall: fwhandler.FirewallConfig{
 			Provider:          "memory",
 			BanMinutes:        10,
-			Whitelist:         []string{"127.0.0.1"}, // never ban the test runner
+			Whitelist:         whitelist,
 			Forgivable:        fwhandler.ForgivableError{DurationInMinute: 10, Count: 3},
 			CityDBFile:        cityDB,
 			UpdatedCityDBFile: updatedCity,
