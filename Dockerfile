@@ -3,7 +3,7 @@ ARG GO_VERSION=1.27.1
 # Stage 1: Build
 FROM golang:${GO_VERSION}-alpine AS builder
 
-ARG CADDY_VERSION=v2.11.4
+ARG CADDY_VERSION=v2.11.7
 
 WORKDIR /app
 
