@@ -58,7 +58,12 @@ type options struct {
 // WithWhitelist overrides the default whitelist ([]string{"127.0.0.1"}) on the authn firewall.
 func WithWhitelist(wl []string) Option {
 	return func(o *options) {
-		o.whitelist = wl
+		if wl != nil {
+			o.whitelist = make([]string, len(wl))
+			copy(o.whitelist, wl)
+		} else {
+			o.whitelist = nil
+		}
 		o.customWhitelist = true
 	}
 }

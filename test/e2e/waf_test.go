@@ -52,7 +52,7 @@ http://{port} {
 	}
 
 	waitForBan(t, c, "127.0.0.1")
-	require.GreaterOrEqual(t, c.MemFirewall.BanCount(), 1)
+	require.Equal(t, 1, c.MemFirewall.BanCount())
 	ban := c.MemFirewall.Bans()[0]
 	require.Equal(t, "127.0.0.1", ban.IP)
 	require.Equal(t, 10, ban.TimeoutInMinute)
@@ -121,7 +121,7 @@ http://{port} {
 
 	// Ban should be registered in memory firewall.
 	waitForBan(t, c, "127.0.0.1")
-	require.GreaterOrEqual(t, c.MemFirewall.BanCount(), 1)
+	require.Equal(t, 1, c.MemFirewall.BanCount())
 	ban := c.MemFirewall.Bans()[0]
 	require.Equal(t, "127.0.0.1", ban.IP)
 	require.Equal(t, 10, ban.TimeoutInMinute)
