@@ -1,6 +1,8 @@
 package caddypaw
 
 import (
+	"fmt"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -9,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/charleshuang3/caddypaw/pkg/caddypaw/config"
+	"github.com/charleshuang3/caddypaw/pkg/waf"
 )
 
 const (
@@ -51,9 +54,21 @@ func (g *globalOptionModule) Provision(ctx caddy.Context) error {
 	g.logger = ctx.Logger(g)
 	g.logger.Info("provisioning app instance", zap.String("name", globalOptionAppName))
 
+	if g.AuthnConfig == nil {
+		return fmt.Errorf("authn_yaml_file is not configured")
+	}
+
 	g.publicKey = g.AuthnConfig.GetPublicKey()
 
 	return nil
+}
+
+// FirewallURL implements waf.FirewallURLProvider.
+func (g *globalOptionModule) FirewallURL() string {
+	if g.AuthnConfig == nil {
+		return ""
+	}
+	return g.AuthnConfig.FirewallURL
 }
 
 func (g *globalOptionModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -90,8 +105,9 @@ func parseGlobalOptionAuthnYAMLFilePath(d *caddyfile.Dispenser, _ any) (any, err
 
 var (
 	// Interface guards
-	_ caddy.Provisioner     = (*globalOptionModule)(nil)
-	_ caddy.Module          = (*globalOptionModule)(nil)
-	_ caddy.App             = (*globalOptionModule)(nil)
-	_ caddyfile.Unmarshaler = (*globalOptionModule)(nil)
+	_ caddy.Provisioner       = (*globalOptionModule)(nil)
+	_ caddy.Module            = (*globalOptionModule)(nil)
+	_ caddy.App               = (*globalOptionModule)(nil)
+	_ caddyfile.Unmarshaler   = (*globalOptionModule)(nil)
+	_ waf.FirewallURLProvider = (*globalOptionModule)(nil)
 )
