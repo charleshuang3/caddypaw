@@ -9,7 +9,21 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/charleshuang3/caddypaw/pkg/caddypaw/config"
+	"github.com/charleshuang3/caddypaw/pkg/waf"
 )
+
+// TestAuthModule_logErr_NilReporter verifies that calling logErr when reporter is nil does not panic.
+func TestAuthModule_logErr_NilReporter(t *testing.T) {
+	a := &authModule{
+		logger: zap.NewNop(),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	assert.NotPanics(t, func() {
+		a.logErr(req, "test reason")
+	})
+}
 
 // TestAuthModule_logErr_UnreachableFirewall verifies that a firewall endpoint
 // which cannot be reached is only logged: the response used to be closed
@@ -18,6 +32,7 @@ func TestAuthModule_logErr_UnreachableFirewall(t *testing.T) {
 	a := &authModule{
 		logger:      zap.NewNop(),
 		authnConfig: &config.AuthnConfig{FirewallURL: "http://127.0.0.1:1"},
+		reporter:    waf.NewReporter(zap.NewNop(), "http://127.0.0.1:1"),
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -31,19 +46,18 @@ func TestAuthModule_logErr_UnreachableFirewall(t *testing.T) {
 // to the firewall endpoint is a bare IP without the port from RemoteAddr.
 func TestAuthModule_logErr_StripsPort(t *testing.T) {
 	var gotIP string
+	var gotReason string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotIP = r.URL.Query().Get("ip")
+		gotReason = r.URL.Query().Get("reason")
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(ts.Close)
 
-	oldClient := httpClient
-	httpClient = ts.Client()
-	t.Cleanup(func() { httpClient = oldClient })
-
 	a := &authModule{
 		logger:      zap.NewNop(),
 		authnConfig: &config.AuthnConfig{FirewallURL: ts.URL},
+		reporter:    waf.NewReporterWithClient(zap.NewNop(), ts.URL, ts.Client()),
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -52,4 +66,5 @@ func TestAuthModule_logErr_StripsPort(t *testing.T) {
 	a.logErr(req, "test reason")
 
 	assert.Equal(t, "203.0.113.5", gotIP)
+	assert.Equal(t, "test reason", gotReason)
 }

@@ -19,6 +19,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/charleshuang3/caddypaw/pkg/caddypaw/config"
+	"github.com/charleshuang3/caddypaw/pkg/waf"
 )
 
 var (
@@ -71,6 +72,7 @@ type authModule struct {
 	CallbackURL  string        `json:"callback_url,omitempty"`
 	PublicURLs   []*urlMatcher `json:"public_urls,omitempty"`
 	Token        string        `json:"token,omitempty"`
+	WAFConfig    *waf.Config   `json:"waf,omitempty"`
 
 	// from paw_global_option
 	authnConfig *config.AuthnConfig
@@ -80,6 +82,9 @@ type authModule struct {
 
 	basicAuthCache *ristretto.Cache[string, *basicAuth]
 	stateCache     *ristretto.Cache[string, string]
+
+	waf      *waf.WAF
+	reporter *waf.Reporter
 }
 
 // CaddyModule returns the Caddy module information.
@@ -127,6 +132,19 @@ func (a *authModule) Provision(ctx caddy.Context) error {
 	a.authnConfig = gOption.AuthnConfig
 	a.publicKey = gOption.publicKey
 
+	var firewallURL string
+	if a.authnConfig != nil {
+		firewallURL = a.authnConfig.FirewallURL
+	}
+	a.reporter = waf.NewReporter(a.logger, firewallURL)
+
+	if a.WAFConfig != nil {
+		a.waf, err = waf.NewWAF(a.WAFConfig, a.logger)
+		if err != nil {
+			return fmt.Errorf("initializing waf: %w", err)
+		}
+	}
+
 	a.oauth2Config = &oauth2.Config{
 		ClientID:     a.ClientID,
 		ClientSecret: a.ClientSecret,
@@ -171,6 +189,20 @@ func (a *authModule) configValidate() error {
 
 // ServeHTTP implements the caddyhttp.MiddlewareHandler interface.
 func (a *authModule) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	if a.waf != nil {
+		interrupted, status, ruleID, err := a.waf.ProcessRequest(r)
+		if err != nil {
+			a.logger.Error("waf evaluation error; failing open", zap.Error(err))
+		} else if interrupted {
+			reason := fmt.Sprintf("waf:%d", ruleID)
+			a.logErr(r, reason)
+			if status == 0 {
+				status = http.StatusForbidden
+			}
+			return caddyhttp.Error(status, fmt.Errorf("waf rule %d triggered", ruleID))
+		}
+	}
+
 	path := r.URL.Path
 	for _, u := range a.PublicURLs {
 		if u.Match(path) {
@@ -352,6 +384,14 @@ func (a *authModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 			a.Token = d.Val()
+		case "waf":
+			if a.WAFConfig != nil {
+				return d.SyntaxErr("waf block can only be defined once")
+			}
+			a.WAFConfig = new(waf.Config)
+			if err := a.WAFConfig.UnmarshalCaddyfile(d); err != nil {
+				return err
+			}
 
 		default:
 			return d.Errf("unrecognized subdirective '%s'", d.Val())

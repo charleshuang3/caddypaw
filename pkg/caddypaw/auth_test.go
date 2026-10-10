@@ -10,9 +10,11 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 
 	"github.com/charleshuang3/caddypaw/pkg/caddypaw/config"
 	"github.com/charleshuang3/caddypaw/pkg/caddypaw/testdata"
+	"github.com/charleshuang3/caddypaw/pkg/waf"
 )
 
 func TestAuthUnmarshalCaddyfile(t *testing.T) {
@@ -202,6 +204,74 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 			},
 			expectError: false,
 		},
+		{
+			name: "valid configuration with embedded waf followed by other subdirectives",
+			caddyfile: `paw_auth {
+				basic_auth
+				waf {
+					directives ` + "`SecRule REQUEST_URI \"@contains evil\" \"id:1001,phase:1,deny,status:403\"`" + `
+				}
+				client_id the-client-id
+				client_secret the-client-secret
+				roles role1 role2
+				callback_url https://example.com/callback
+				public_urls path_prefix:/path1
+			}`,
+			expected: &authModule{
+				AuthType:     authTypeBasicAuth,
+				ClientID:     "the-client-id",
+				ClientSecret: "the-client-secret",
+				Roles:        []string{"role1", "role2"},
+				CallbackURL:  "https://example.com/callback",
+				PublicURLs:   []*urlMatcher{{"path_prefix", "/path1"}},
+				WAFConfig: &waf.Config{
+					Directives: `SecRule REQUEST_URI "@contains evil" "id:1001,phase:1,deny,status:403"`,
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid configuration with embedded waf load_owasp_crs",
+			caddyfile: `paw_auth {
+				server_cookies
+				client_id the-client-id
+				client_secret the-client-secret
+				roles role1
+				callback_url https://example.com/callback
+				waf {
+					load_owasp_crs
+					directives ` + "`SecRuleEngine On`" + `
+				}
+			}`,
+			expected: &authModule{
+				AuthType:     authTypeServerCookies,
+				ClientID:     "the-client-id",
+				ClientSecret: "the-client-secret",
+				Roles:        []string{"role1"},
+				CallbackURL:  "https://example.com/callback",
+				WAFConfig: &waf.Config{
+					LoadOWASPCRS: true,
+					Directives:   "SecRuleEngine On",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "duplicate waf block error",
+			caddyfile: `paw_auth {
+				basic_auth
+				client_id the-client-id
+				client_secret the-client-secret
+				roles role1
+				waf {
+					directives ` + "`SecRuleEngine On`" + `
+				}
+				waf {
+					directives ` + "`SecRuleEngine On`" + `
+				}
+			}`,
+			expectError: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -221,6 +291,7 @@ func TestAuthUnmarshalCaddyfile(t *testing.T) {
 				assert.Equal(t, tt.expected.CallbackURL, p.CallbackURL)
 				assert.Equal(t, tt.expected.PublicURLs, p.PublicURLs)
 				assert.Equal(t, tt.expected.Token, p.Token)
+				assert.Equal(t, tt.expected.WAFConfig, p.WAFConfig)
 			}
 		})
 	}
@@ -502,4 +573,79 @@ func TestIsAjax(t *testing.T) {
 			assert.Equal(t, tt.expected, a.isAjax(r))
 		})
 	}
+}
+
+func TestAuthDirective_WithWAF(t *testing.T) {
+	caddyfileInput := fmt.Sprintf(`{
+	order paw_auth before basic_auth
+	authn_yaml_file %s
+}
+
+example.com {
+	paw_auth {
+		basic_auth
+		client_id the-client-id
+		client_secret the-client-secret
+		roles role1 role2
+		callback_url https://example.com/callback
+		waf {
+			directives `+"`SecRuleEngine On`"+`
+		}
+	}
+	respond "hi"
+}
+`, testdata.AuthnYAML(t))
+
+	cfg := caddyConfig(t, caddyfileInput)
+
+	// ProvisionContext provisions and validates the config including waf initialization.
+	_, err := caddy.ProvisionContext(cfg)
+	assert.NoError(t, err)
+}
+
+func TestServeHTTP_WAF_BlocksBeforeAuthAndPublicURLs(t *testing.T) {
+	mock, testServer := setupMockAuthnServer(t)
+	a := newAuthModule(t, testServer, authTypeBasicAuth)
+
+	u, err := urlMatcherFromStr("path_prefix:/public")
+	require.NoError(t, err)
+	a.PublicURLs = append(a.PublicURLs, u)
+
+	wafCfg := &waf.Config{
+		Directives: `SecRule REQUEST_URI "@contains evil" "id:1001,phase:1,deny,status:403"`,
+	}
+	wEngine, err := waf.NewWAF(wafCfg, zap.NewNop())
+	require.NoError(t, err)
+	a.waf = wEngine
+
+	nextCalled := false
+	nextHandler := &mockCaddyHTTPHandler{handler: func(w http.ResponseWriter, r *http.Request) error {
+		nextCalled = true
+		w.WriteHeader(http.StatusOK)
+		return nil
+	}}
+
+	// 1. Attack on a public URL -> blocked by WAF despite being public
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/public/evil?foo=bar", nil)
+	r.RemoteAddr = "198.51.100.1:12345"
+
+	err = a.ServeHTTP(w, r, nextHandler)
+	require.Error(t, err)
+	assert.False(t, nextCalled)
+
+	// Verify report sent to firewall with rule ID reason
+	require.Len(t, mock.firewallRequests, 1)
+	assert.Equal(t, "198.51.100.1", mock.firewallRequests[0].URL.Query().Get("ip"))
+	assert.Equal(t, "waf:1001", mock.firewallRequests[0].URL.Query().Get("reason"))
+
+	// 2. Legitimate request on a public URL -> passes WAF and gets served by nextHandler
+	w2 := httptest.NewRecorder()
+	r2 := httptest.NewRequest(http.MethodGet, "/public/safe", nil)
+	r2.RemoteAddr = "198.51.100.1:12345"
+
+	err = a.ServeHTTP(w2, r2, nextHandler)
+	require.NoError(t, err)
+	assert.True(t, nextCalled)
+	assert.Len(t, mock.firewallRequests, 1) // No new firewall report
 }

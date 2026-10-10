@@ -16,6 +16,7 @@ import (
 
 	"github.com/charleshuang3/caddypaw/pkg/caddypaw/config"
 	"github.com/charleshuang3/caddypaw/pkg/caddypaw/testdata"
+	"github.com/charleshuang3/caddypaw/pkg/waf"
 )
 
 type mockAuthnServer struct {
@@ -176,6 +177,7 @@ func newAuthModule(t *testing.T, testServer *httptest.Server, ty authType) *auth
 			Issuer:             "test-issuer",
 			AuthURL:            testServer.URL + "/oauth2/authorize",
 			TokenURL:           testServer.URL + "/oauth2/token",
+			FirewallURL:        testServer.URL,
 		},
 		oauth2Config: &oauth2.Config{
 			ClientID:     "test-client-id",
@@ -191,6 +193,7 @@ func newAuthModule(t *testing.T, testServer *httptest.Server, ty authType) *auth
 		stateCache:     stateCache,
 		publicKey:      testdata.PublicKey,
 		logger:         zap.NewNop(),
+		reporter:       waf.NewReporterWithClient(zap.NewNop(), testServer.URL, testServer.Client()),
 	}
 
 	return a
