@@ -205,7 +205,7 @@ func TestCheckServerCookies_redirectToAuthorize(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 
-	code, user, err := a.checkServerCookies(w, r)
+	code, user, err := a.checkServerCookies(w, r, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusFound, code)
@@ -240,7 +240,7 @@ func TestCheckServerCookies_redirectToAuthorize_Ajax(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("X-Requested-With", "XMLHttpRequest")
 
-	code, user, err := a.checkServerCookies(w, r)
+	code, user, err := a.checkServerCookies(w, r, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusUnauthorized, code)
@@ -270,7 +270,7 @@ func TestCheckServerCookies_handleDefaultCallback(t *testing.T) {
 	_url := defaultCallbackURL + "?" + q.Encode()
 	r := httptest.NewRequest(http.MethodGet, _url, nil)
 
-	code, user, err := a.checkServerCookies(w, r)
+	code, user, err := a.checkServerCookies(w, r, nil)
 	require.NoError(t, err)
 	assert.Nil(t, user)
 	assert.Equal(t, http.StatusFound, code)
@@ -376,7 +376,7 @@ func TestCheckServerCookies_handleDefaultCallback_Error(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, _url, nil)
 
 			a.stateCache.Wait()
-			code, user, err := a.checkServerCookies(w, r)
+			code, user, err := a.checkServerCookies(w, r, nil)
 
 			assert.Equal(t, tc.assertCode, code)
 			assert.Nil(t, user)
@@ -417,7 +417,7 @@ func TestCheckServerCookies_refreshToken(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// 4. Call a.checkServerCookies (which will internally call refreshToken because of the expired access token).
-	code, user, err := a.checkServerCookies(w, req)
+	code, user, err := a.checkServerCookies(w, req, nil)
 
 	// 5. Assert that the response code is http.StatusOK and a valid user is returned.
 	require.NoError(t, err)
@@ -456,7 +456,7 @@ func TestCheckServerCookies_refreshToken_redirectToAuthorize(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// 3. Call a.checkServerCookies.
-	code, user, err := a.checkServerCookies(w, req)
+	code, user, err := a.checkServerCookies(w, req, nil)
 
 	// 4. Assert that the response code is http.StatusFound and no user is returned.
 	require.NoError(t, err)
@@ -512,7 +512,7 @@ func TestCheckServerCookies_refreshToken_Error(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// 4. Call a.checkServerCookies.
-	code, user, err := a.checkServerCookies(w, req)
+	code, user, err := a.checkServerCookies(w, req, nil)
 
 	// 5. Assert that the gateway restarts the auth flow and returns no error.
 	assert.Equal(t, http.StatusFound, code)
@@ -615,7 +615,7 @@ func TestCheckServerCookies_callback_ServerError(t *testing.T) {
 	q.Set("state", st)
 	r := httptest.NewRequest(http.MethodGet, defaultCallbackURL+"?"+q.Encode(), nil)
 
-	code, _, err := a.checkServerCookies(w, r)
+	code, _, err := a.checkServerCookies(w, r, nil)
 
 	assert.Equal(t, http.StatusBadGateway, code)
 	require.Error(t, err)
@@ -636,7 +636,7 @@ func TestCheckServerCookies_refreshToken_ServerError(t *testing.T) {
 	mockServer.responseCode = http.StatusInternalServerError
 
 	w := httptest.NewRecorder()
-	code, _, err := a.checkServerCookies(w, req)
+	code, _, err := a.checkServerCookies(w, req, nil)
 
 	assert.Equal(t, http.StatusBadGateway, code)
 	require.Error(t, err)
@@ -660,7 +660,7 @@ func TestCheckServerCookies_callback_InvalidGrant(t *testing.T) {
 	q.Set("state", st)
 	r := httptest.NewRequest(http.MethodGet, defaultCallbackURL+"?"+q.Encode(), nil)
 
-	code, _, err := a.checkServerCookies(w, r)
+	code, _, err := a.checkServerCookies(w, r, nil)
 
 	assert.Equal(t, http.StatusUnauthorized, code)
 	require.Error(t, err)
@@ -682,7 +682,7 @@ func TestCheckServerCookies_refreshToken_InvalidClient(t *testing.T) {
 	mockServer.errorCode = "invalid_client"
 
 	w := httptest.NewRecorder()
-	code, _, err := a.checkServerCookies(w, req)
+	code, _, err := a.checkServerCookies(w, req, nil)
 
 	assert.Equal(t, http.StatusBadGateway, code)
 	require.Error(t, err)
@@ -704,7 +704,7 @@ func TestCheckServerCookies_refreshToken_InvalidGrant(t *testing.T) {
 	mockServer.errorCode = "invalid_grant"
 
 	w := httptest.NewRecorder()
-	code, _, err := a.checkServerCookies(w, req)
+	code, _, err := a.checkServerCookies(w, req, nil)
 
 	assert.Equal(t, http.StatusFound, code)
 	require.NoError(t, err)
@@ -727,7 +727,7 @@ func TestCheckServerCookies_callback_AuthorizeError(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, defaultCallbackURL+"?"+q.Encode(), nil)
 
 	w := httptest.NewRecorder()
-	code, _, err := a.checkServerCookies(w, r)
+	code, _, err := a.checkServerCookies(w, r, nil)
 
 	assert.Equal(t, http.StatusBadRequest, code)
 	require.Error(t, err)
@@ -784,7 +784,7 @@ func TestCheckServerCookies_withAccessToken(t *testing.T) {
 				Value: tc.accessToken,
 			})
 
-			code, user, err := a.checkServerCookies(w, req)
+			code, user, err := a.checkServerCookies(w, req, nil)
 
 			assert.Equal(t, tc.expectedCode, code)
 			if tc.expectedUser != nil {

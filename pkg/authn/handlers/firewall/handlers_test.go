@@ -29,6 +29,8 @@ func TestHandlers(t *testing.T) {
 		path           string
 		ip             string
 		reason         string
+		count          string
+		weight         string
 		expectedStatus int
 		expectedLog    bool
 		expectedAction string
@@ -84,6 +86,59 @@ func TestHandlers(t *testing.T) {
 			expectedAction: "",
 		},
 		{
+			name:           "logerr observed does not count",
+			path:           "/logerr",
+			ip:             "2.2.2.3",
+			reason:         "waf:6001",
+			count:          "false",
+			expectedStatus: http.StatusOK,
+			expectedLog:    true,
+			expectedAction: "observed",
+		},
+		{
+			name:           "logerr explicit count=true still counts",
+			path:           "/logerr",
+			ip:             "2.2.2.4",
+			reason:         "waf:6001",
+			count:          "true",
+			expectedStatus: http.StatusOK,
+			expectedLog:    true,
+			expectedAction: "count error",
+		},
+		{
+			name:           "logerr with weight is accepted",
+			path:           "/logerr",
+			ip:             "2.2.2.5",
+			reason:         "waf:6001 | basic_auth: invalid credentials",
+			weight:         "2",
+			expectedStatus: http.StatusOK,
+			expectedLog:    true,
+			expectedAction: "count error",
+		},
+		{
+			name:           "logerr with zero weight is rejected",
+			path:           "/logerr",
+			ip:             "2.2.2.6",
+			reason:         "waf:6001",
+			weight:         "0",
+			expectedStatus: http.StatusBadRequest,
+			expectedLog:    false,
+			expectedAction: "",
+		},
+		{
+			// The maximum a single request can produce is 2 (a refused request plus
+			// a rejected password), so anything above it is a client bug or an
+			// attempt to spend a whole budget with one call.
+			name:           "logerr with oversize weight is rejected",
+			path:           "/logerr",
+			ip:             "2.2.2.7",
+			reason:         "waf:6001",
+			weight:         "3",
+			expectedStatus: http.StatusBadRequest,
+			expectedLog:    false,
+			expectedAction: "",
+		},
+		{
 			name:           "logerr ipv6 success",
 			path:           "/logerr",
 			ip:             "2001:db8::1",
@@ -133,6 +188,12 @@ func TestHandlers(t *testing.T) {
 			}
 			if tt.reason != "" {
 				q.Add("reason", tt.reason)
+			}
+			if tt.count != "" {
+				q.Add("count", tt.count)
+			}
+			if tt.weight != "" {
+				q.Add("weight", tt.weight)
 			}
 			req.URL.RawQuery = q.Encode()
 

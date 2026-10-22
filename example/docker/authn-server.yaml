@@ -48,6 +48,10 @@ firewall:
     - ::1
   forgivable:
     duration_in_minute: 3
+    # Suspicion budget in points, not events: one independent signal (a refused
+    # request, a rejected password, a broken login flow) costs 1 point, and a
+    # request that trips two of them costs 2. A budget of 3 therefore still bans
+    # a plain violation on the 4th report, and a corroborated one on the 2nd.
     count: 3
 
   # GeoLite2 databases, mounted at /app/geoip (see ../docker-compose.yaml).

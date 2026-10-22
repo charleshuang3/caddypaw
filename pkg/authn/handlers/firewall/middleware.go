@@ -56,7 +56,12 @@ var (
 const (
 	defaultBanMinutes       = 10
 	defaultDurationInMinute = 10
-	defaultCount            = 3
+	// defaultCount is a suspicion budget in points, not a number of events: one
+	// independent signal costs 1 point, and a report carrying two corroborating
+	// signals costs 2 (see the weight constants in pkg/caddypaw and pkg/waf). With
+	// the historical count of 3 events, a plain violation therefore still bans on
+	// the fourth report, while a corroborated one bans on the second.
+	defaultCount = 3
 
 	KeyHackingError = "HACKING_ERROR"
 )
@@ -199,14 +204,14 @@ func (f *Firewall) Middleware() gin.HandlerFunc {
 		reason, ok := c.Get(KeyHackingError)
 		if ok {
 			ip := c.ClientIP()
-			f.fw.LogIPError(ip, reason.(string))
+			f.fw.LogIPError(ip, reason.(string), fw.DefaultWeight)
 			return
 		}
 
 		// this means user request to url undefined in router.
 		if c.Writer.Status() == http.StatusNotFound {
 			ip := c.ClientIP()
-			f.fw.LogIPError(ip, "undefined_url")
+			f.fw.LogIPError(ip, "undefined_url", fw.DefaultWeight)
 			return
 		}
 	}

@@ -23,10 +23,10 @@ const (
 	cookieKeyRefreshToken = "pwa_ref"
 )
 
-func (a *authModule) checkServerCookies(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
+func (a *authModule) checkServerCookies(w http.ResponseWriter, r *http.Request, v *violations) (int, *userInfo, error) {
 	path := r.URL.Path
 	if path == defaultCallbackURL {
-		return a.handleDefaultCallback(w, r)
+		return a.handleDefaultCallback(w, r, v)
 	}
 
 	accessToken, err := r.Cookie(cookieKeyAccessToken)
@@ -41,7 +41,7 @@ func (a *authModule) checkServerCookies(w http.ResponseWriter, r *http.Request) 
 		if errors.Is(err, jwt.TokenExpiredError()) {
 			return a.refreshToken(w, r)
 		}
-		a.logErr(r, fmt.Sprintf("invalid token on path: %s", path))
+		v.reject(fmt.Sprintf("invalid token on path: %s", path), weightAuthSignal)
 		return http.StatusUnauthorized, nil, err
 	}
 
@@ -86,7 +86,7 @@ func classifyTokenError(err error) bool {
 // handleDefaultCallback handles the callback from authn server
 // 1. oauth2 code flow for tokens.
 // 2. redirect the user to pre-auth url.
-func (a *authModule) handleDefaultCallback(w http.ResponseWriter, r *http.Request) (int, *userInfo, error) {
+func (a *authModule) handleDefaultCallback(w http.ResponseWriter, r *http.Request, v *violations) (int, *userInfo, error) {
 	q := r.URL.Query()
 
 	// An authorize request can be rejected before any code is issued: the authn
@@ -104,12 +104,12 @@ func (a *authModule) handleDefaultCallback(w http.ResponseWriter, r *http.Reques
 
 	code := q.Get("code")
 	if code == "" {
-		a.logErr(r, "callback: no auth code")
+		v.reject("callback: no auth code", weightAuthSignal)
 		return http.StatusBadRequest, nil, caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("no code"))
 	}
 	state := q.Get("state")
 	if state == "" {
-		a.logErr(r, "callback: no state")
+		v.reject("callback: no state", weightAuthSignal)
 		return http.StatusBadRequest, nil, caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("no state"))
 	}
 
@@ -119,7 +119,7 @@ func (a *authModule) handleDefaultCallback(w http.ResponseWriter, r *http.Reques
 		// State not found: may have expired, been evicted from cache, or is a replay.
 		// Redirect to a fresh auth flow rather than returning a 400, which could
 		// cause a redirect loop if the error handler sends the user back here.
-		a.logErr(r, "callback: unknown state, restarting auth flow")
+		v.reject("callback: unknown state, restarting auth flow", weightAuthSignal)
 		a.logger.Info("callback: unknown state, redirecting to authorize", zap.String("state", state))
 		return a.redirectToAuthorize(w, r)
 	}

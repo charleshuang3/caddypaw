@@ -43,15 +43,29 @@ type ban struct {
 type countingError struct {
 	ip     string
 	reason string
+	// weight is how much of the IP's allowance this event consumes. It is at
+	// least 1 for counted events; reports that carry more than one independent
+	// signal (a wrong password plus a WAF match) weigh more and exhaust the
+	// budget sooner.
+	weight int
+	// observedOnly reports the event without consuming any of the IP's
+	// forgivable allowance and without ever banning. Used by WAF detection-only
+	// mode, which must stay visible in the logs while never causing a ban.
+	observedOnly bool
 }
 
-// ForgivableError represent to the maxium error we can forgive per ip in
-// the given Durations.
+// ForgivableError represents the suspicion budget granted to one IP within the
+// given duration. Count is a budget measured in points, not in events: one
+// independent signal costs 1 point, and a report that carries two corroborating
+// signals costs 2. Exhausting Count points bans the IP.
 type ForgivableError struct {
 	Duration    time.Duration
 	Count       int
 	BanInMinute int
 }
+
+// DefaultWeight is the weight of one plain, uncorroborated signal.
+const DefaultWeight = 1
 
 type errorCounter struct {
 	rateLimiter rate.Limiter
@@ -101,6 +115,10 @@ func (s *Firewall) loop() {
 		case c := <-s.countCh:
 			if s.inWhitelist(c.ip) {
 				// IP is whitelisted, do not log
+				continue
+			}
+			if c.observedOnly {
+				s.doObserveError(&c)
 				continue
 			}
 			s.doCountError(&c)
@@ -171,7 +189,19 @@ func (s *Firewall) doCountError(c *countingError) {
 		}
 	}
 
-	if ec.rateLimiter.Allow() {
+	// A single report can never exhaust the whole budget by itself, however heavy
+	// it is: weight is capped at the budget size. Banning therefore always needs at
+	// least two reports within the window, so one malicious-looking request (or one
+	// forged /logerr call) cannot ban an IP on its own.
+	weight := c.weight
+	if weight > s.forgivable.Count {
+		weight = s.forgivable.Count
+	}
+
+	// AllowN is all-or-nothing: when the remaining allowance cannot cover the
+	// full weight the event is not partially accounted and the IP is banned, so a
+	// corroborated violation can never be discounted by leftover points.
+	if ec.rateLimiter.AllowN(time.Now(), weight) {
 		var geo *ipgeo.IPGeo
 		if s.ipGeo != nil {
 			geo = s.ipGeo.GetIPGeo(c.ip)
@@ -196,11 +226,40 @@ func (s *Firewall) doCountError(c *countingError) {
 	})
 }
 
-// LogIPError counts an error happens on request from given ip, ban the ip
-// reach to the threshold.
-func (s *Firewall) LogIPError(ip string, reason string) {
+// LogIPError counts an error happened on a request from the given ip, banning
+// the ip once its allowance is exhausted.
+//
+// weight is the number of points the event costs; values below 1 are treated as
+// DefaultWeight so that a caller cannot make a violation free by accident (use
+// LogIPErrorObserved for events that must not count at all).
+func (s *Firewall) LogIPError(ip string, reason string, weight int) {
+	if weight < DefaultWeight {
+		weight = DefaultWeight
+	}
 	s.countCh <- countingError{
 		ip:     ip,
 		reason: reason,
+		weight: weight,
 	}
+}
+
+// LogIPErrorObserved logs an error from the given ip without counting it against
+// the forgivable allowance. It never bans, which is what detection-only WAF mode
+// needs: the match stays visible in the log while the IP keeps its full budget.
+func (s *Firewall) LogIPErrorObserved(ip string, reason string) {
+	s.countCh <- countingError{
+		ip:           ip,
+		reason:       reason,
+		observedOnly: true,
+	}
+}
+
+// doObserveError logs an observed-only event. It neither consumes allowance nor
+// bans, and it does not report "banned" for an already banned IP.
+func (s *Firewall) doObserveError(c *countingError) {
+	var geo *ipgeo.IPGeo
+	if s.ipGeo != nil {
+		geo = s.ipGeo.GetIPGeo(c.ip)
+	}
+	s.logger.Log(c.ip, time.Time{}, []string{c.reason}, "observed", geo)
 }

@@ -59,3 +59,24 @@ app3.example.com:8443 {
 
 	respond "Hi, This is app3" 200
 }
+
+# WebDAV behind basic auth. Generic CRS rules misfire on PROPFIND/PUT payloads,
+# so authenticated traffic is inspected in detection-only mode: every match is
+# still logged and reported to /logerr, but nothing is blocked. Unauthenticated
+# traffic that trips a rule is also reported (the ban pipeline stays fed) while
+# still receiving its 401 challenge, and public_urls keep blocking.
+dav.example.com:8443 {
+	paw_auth {
+		basic_auth
+		client_id webdav
+		client_secret client_secret
+		roles admin
+		waf {
+			preset default
+			after_auth detect_only
+		}
+	}
+
+	# The WebDAV server itself, running on the same host.
+	reverse_proxy 127.0.0.1:8081
+}

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/charleshuang3/caddypaw/pkg/firewall/ipgeo"
 )
@@ -219,7 +220,7 @@ func TestLogIPError(t *testing.T) {
 			}
 
 			for i := 0; i < tt.errorCount; i++ {
-				fw.LogIPError(tt.ip, tt.reason)
+				fw.LogIPError(tt.ip, tt.reason, DefaultWeight)
 			}
 
 			if tt.expectLog { // Use the new field from the test struct
@@ -239,4 +240,134 @@ func TestLogIPError(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestLogIPErrorObserved makes sure an observed event never consumes allowance
+// and never bans, no matter how many arrive. This is what WAF detection-only
+// mode relies on: it must stay visible in the log without blocking clients.
+func TestLogIPErrorObserved(t *testing.T) {
+	mockFW := &MockIFirewall{}
+	mockLogger := &MockILogger{}
+	forgivable := ForgivableError{Duration: time.Minute, Count: 2, BanInMinute: 5}
+	fw := New([]string{}, mockFW, mockLogger, nil, forgivable)
+
+	const observed = 10
+	mockLogger.Wg.Add(observed)
+	for i := 0; i < observed; i++ {
+		fw.LogIPErrorObserved("192.168.1.50", "waf:6001")
+	}
+	mockLogger.Wg.Wait()
+
+	assert.Empty(t, mockFW.BannedIPs, "observed events must never ban")
+	require.Len(t, mockLogger.Logs, observed)
+	for _, entry := range mockLogger.Logs {
+		assert.Equal(t, "observed", entry.Action)
+		assert.Equal(t, []string{"waf:6001"}, entry.Reasons)
+	}
+
+	// Observed events must not have eaten the allowance: the IP still needs the
+	// full Count+1 counted errors before it is banned.
+	mockLogger.Wg.Add(3)
+	for i := 0; i < 3; i++ {
+		fw.LogIPError("192.168.1.50", "Invalid password", DefaultWeight)
+	}
+	mockLogger.Wg.Wait()
+
+	assert.Equal(t, []string{"192.168.1.50"}, mockFW.BannedIPs,
+		"counted errors must still ban on schedule")
+}
+
+// TestLogIPErrorWeight pins the budget semantics: Count is a number of points,
+// and a report may spend two of them when two independent signals corroborate
+// each other. A corroborated violation must therefore be banned in half the
+// reports an ordinary one needs.
+func TestLogIPErrorWeight(t *testing.T) {
+	const ip = "192.168.1.60"
+
+	t.Run("corroborated violation bans on the second report", func(t *testing.T) {
+		mockFW := &MockIFirewall{}
+		mockLogger := &MockILogger{}
+		forgivable := ForgivableError{Duration: time.Minute, Count: 3, BanInMinute: 5}
+		fw := New([]string{}, mockFW, mockLogger, nil, forgivable)
+
+		// A wrong password plus a WAF match: 1 + 1 = 2 of the 3 points.
+		mockLogger.Wg.Add(1)
+		fw.LogIPError(ip, "waf:949110 | basic_auth: invalid credentials", 2)
+		mockLogger.Wg.Wait()
+
+		require.Len(t, mockLogger.Logs, 1)
+		assert.Equal(t, "count error", mockLogger.Logs[0].Action)
+		assert.Empty(t, mockFW.BannedIPs, "one report must not ban on its own")
+
+		// The second corroborated report cannot fit in the remaining point, so it
+		// bans: two reports instead of the four an ordinary violation needs.
+		mockLogger.Wg.Add(1)
+		fw.LogIPError(ip, "waf:949110 | basic_auth: invalid credentials", 2)
+		mockLogger.Wg.Wait()
+
+		assert.Equal(t, []string{ip}, mockFW.BannedIPs)
+		last := mockLogger.Logs[len(mockLogger.Logs)-1]
+		assert.Equal(t, "ban", last.Action)
+		assert.Equal(t, []string{"waf:949110 | basic_auth: invalid credentials", "waf:949110 | basic_auth: invalid credentials"},
+			last.Reasons, "the ban log must show every reason that led to it")
+	})
+
+	t.Run("weight is not partially accounted", func(t *testing.T) {
+		mockFW := &MockIFirewall{}
+		mockLogger := &MockILogger{}
+		forgivable := ForgivableError{Duration: time.Minute, Count: 3, BanInMinute: 5}
+		fw := New([]string{}, mockFW, mockLogger, nil, forgivable)
+
+		// Spend 2 of 3 points.
+		mockLogger.Wg.Add(1)
+		fw.LogIPError(ip, "waf:949110 | basic_auth: invalid credentials", 2)
+		mockLogger.Wg.Wait()
+		assert.Empty(t, mockFW.BannedIPs)
+
+		// The full weight no longer fits in the remaining point, so the event bans
+		// instead of being discounted to a single point.
+		mockLogger.Wg.Add(1)
+		fw.LogIPError(ip, "waf:949110 | basic_auth: invalid credentials", 2)
+		mockLogger.Wg.Wait()
+
+		assert.Equal(t, []string{ip}, mockFW.BannedIPs)
+	})
+
+	t.Run("weight below one is treated as a single point", func(t *testing.T) {
+		mockFW := &MockIFirewall{}
+		mockLogger := &MockILogger{}
+		forgivable := ForgivableError{Duration: time.Minute, Count: 1, BanInMinute: 5}
+		fw := New([]string{}, mockFW, mockLogger, nil, forgivable)
+
+		mockLogger.Wg.Add(2)
+		fw.LogIPError(ip, "zero weight", 0)
+		fw.LogIPError(ip, "negative weight", -5)
+		mockLogger.Wg.Wait()
+
+		assert.Equal(t, []string{ip}, mockFW.BannedIPs,
+			"a violation must never be free unless it is explicitly observed-only")
+	})
+
+	// A report heavier than the whole budget is capped at the budget, so a single
+	// (possibly forged) /logerr call can never ban an IP by itself: banning always
+	// requires at least two reports within the window.
+	t.Run("oversize weight is capped at the budget", func(t *testing.T) {
+		mockFW := &MockIFirewall{}
+		mockLogger := &MockILogger{}
+		forgivable := ForgivableError{Duration: time.Minute, Count: 2, BanInMinute: 5}
+		fw := New([]string{}, mockFW, mockLogger, nil, forgivable)
+
+		mockLogger.Wg.Add(1)
+		fw.LogIPError(ip, "huge weight", 100)
+		mockLogger.Wg.Wait()
+
+		assert.Equal(t, "count error", mockLogger.Logs[0].Action)
+		assert.Empty(t, mockFW.BannedIPs, "one report must not ban, however heavy it claims to be")
+
+		mockLogger.Wg.Add(1)
+		fw.LogIPError(ip, "second report", DefaultWeight)
+		mockLogger.Wg.Wait()
+
+		assert.Equal(t, []string{ip}, mockFW.BannedIPs)
+	})
 }

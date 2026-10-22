@@ -10,6 +10,8 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/charleshuang3/caddypaw/pkg/waf"
 )
 
 func TestCheckBasicAuth(t *testing.T) {
@@ -28,7 +30,7 @@ func TestCheckBasicAuth(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.SetBasicAuth("test-user", "test-password")
 
-	status, user, err := a.checkBasicAuth(w, r)
+	status, user, err := a.checkBasicAuth(w, r, nil)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, status)
 	assert.Equal(t, want.Username, user.Username)
@@ -58,7 +60,7 @@ func TestCheckBasicAuth_NoBasicAuthHeader(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 
-	status, user, err := a.checkBasicAuth(w, r)
+	status, user, err := a.checkBasicAuth(w, r, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusUnauthorized, status)
 	assert.Nil(t, user)
@@ -103,7 +105,7 @@ func TestCheckBasicAuth_AuthnServerResponseError(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, "/", nil)
 		r.SetBasicAuth("test-user", "test-password")
 
-		status, user, err := a.checkBasicAuth(w, r)
+		status, user, err := a.checkBasicAuth(w, r, nil)
 		assert.Equal(t, tt.wantStatus, status) // Assert on the returned status
 		assert.Nil(t, user)
 		if tt.wantErr {
@@ -170,7 +172,7 @@ func TestCheckBasicAuth_Cache(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, "/", nil)
 			r.SetBasicAuth("test-user", tt.password)
 
-			status, user, err := a.checkBasicAuth(w, r)
+			status, user, err := a.checkBasicAuth(w, r, nil)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantStatus, status)
 			assert.Equal(t, tt.wantUser, user)
@@ -306,4 +308,181 @@ func TestServeHTTP_BasicAuth_Error(t *testing.T) {
 			assert.False(t, called)
 		})
 	}
+}
+
+func TestServeHTTP_BasicAuth_ReportsInvalidCredentials(t *testing.T) {
+	tests := []struct {
+		name          string
+		username      string
+		password      string
+		setCredential bool
+		cachePreload  bool
+		// rawAuthHeader overrides the Authorization header verbatim.
+		rawAuthHeader string
+		// authnCode is what the mock authn server answers on a cache miss.
+		authnCode  int
+		wantReason string
+		// wantNoReport suppresses every firewall assertion.
+		wantNoReport bool
+	}{
+		{
+			// A browser's first request carries no credentials at all. Nothing about
+			// it says the client is attacking, so it must not be reported: counting
+			// it would ban browsers, health checks and WebDAV clients for behaving
+			// normally.
+			name:          "missing credentials",
+			setCredential: false,
+			cachePreload:  false,
+			wantNoReport:  true,
+		},
+		{
+			name:          "malformed basic authorization header",
+			setCredential: false,
+			cachePreload:  false,
+			rawAuthHeader: "Basic ###not-base64###",
+			wantReason:    reasonInvalidCredentials,
+		},
+		{
+			// Another scheme is not an attempt at basic auth, so it must not spend
+			// the client's budget.
+			name:          "foreign authorization scheme",
+			setCredential: false,
+			cachePreload:  false,
+			rawAuthHeader: "Bearer some-token",
+			wantNoReport:  true,
+		},
+		{
+			name:          "cached user, wrong password",
+			username:      "test-user",
+			password:      "wrong-password",
+			setCredential: true,
+			cachePreload:  true,
+			wantReason:    reasonInvalidCredentials,
+		},
+		{
+			name:          "authn rejects credentials",
+			username:      "test-user",
+			password:      "wrong-password",
+			setCredential: true,
+			cachePreload:  false,
+			authnCode:     http.StatusUnauthorized,
+			wantReason:    reasonInvalidCredentials,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock, testServer := setupMockAuthnServer(t)
+			a := newAuthModule(t, testServer, authTypeBasicAuth)
+
+			if tt.cachePreload {
+				a.storeBasicAuth("test-user", "test-password", &userInfo{
+					Username:   "test-user",
+					Roles:      "admin",
+					roles:      stringset.New("admin"),
+					Expiration: time.Now().Add(time.Hour).Unix(),
+				})
+				a.basicAuthCache.Wait()
+			}
+
+			if tt.authnCode != 0 {
+				mock.responseCode = tt.authnCode
+			}
+
+			nextCalled := false
+			next := &mockCaddyHTTPHandler{handler: func(w http.ResponseWriter, r *http.Request) error {
+				nextCalled = true
+				w.WriteHeader(http.StatusOK)
+				return nil
+			}}
+
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r.RemoteAddr = "203.0.113.5:4321"
+			if tt.setCredential {
+				r.SetBasicAuth(tt.username, tt.password)
+			}
+			if tt.rawAuthHeader != "" {
+				r.Header.Set("Authorization", tt.rawAuthHeader)
+			}
+
+			err := a.ServeHTTP(w, r, next)
+			require.Error(t, err)
+			assert.False(t, nextCalled)
+			assert.Equal(t, `Basic realm="restricted"`, w.Header().Get("WWW-Authenticate"))
+
+			if tt.wantNoReport {
+				assert.Empty(t, mock.firewallRequests, "a request without credentials must not be reported")
+				return
+			}
+
+			require.Len(t, mock.firewallRequests, 1, "a failed attempt must feed the ban pipeline")
+			assert.Equal(t, "203.0.113.5", mock.firewallRequests[0].URL.Query().Get("ip"))
+			assert.Equal(t, tt.wantReason, mock.firewallRequests[0].URL.Query().Get("reason"))
+			assert.Empty(t, mock.firewallRequests[0].URL.Query().Get("weight"),
+				"one signal is one point, so the parameter is omitted")
+		})
+	}
+}
+
+func TestServeHTTP_BasicAuth_SuccessIsNotReported(t *testing.T) {
+	mock, testServer := setupMockAuthnServer(t)
+	a := newAuthModule(t, testServer, authTypeBasicAuth)
+
+	mock.responseCode = http.StatusOK
+	mock.user = &userInfo{
+		Username:   "test-user",
+		Roles:      "admin",
+		Expiration: time.Now().Add(time.Hour).Unix(),
+	}
+
+	next := &mockCaddyHTTPHandler{handler: func(w http.ResponseWriter, r *http.Request) error {
+		w.WriteHeader(http.StatusOK)
+		return nil
+	}}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr = "203.0.113.6:4321"
+	r.SetBasicAuth("test-user", "test-password")
+
+	require.NoError(t, a.ServeHTTP(w, r, next))
+	assert.Empty(t, mock.firewallRequests)
+}
+
+// TestServeHTTP_BasicAuth_WAFMatchWinsOverCredentialFailure verifies that a
+// request failing both the WAF and authentication is reported exactly once, with
+// both reasons and the sum of both weights: two independent signals are stronger
+// evidence than either alone. Without credentials there is only one signal.
+func TestServeHTTP_BasicAuth_WAFMatchWinsOverCredentialFailure(t *testing.T) {
+	mock, a := newAfterAuthModule(t, waf.AfterAuthDetectOnly, afterAuthTestDirectives)
+
+	next := &mockCaddyHTTPHandler{handler: func(w http.ResponseWriter, r *http.Request) error {
+		w.WriteHeader(http.StatusOK)
+		return nil
+	}}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/attack", nil)
+	r.RemoteAddr = "203.0.113.7:4321"
+	r.SetBasicAuth("test-user", "wrong-password")
+
+	require.Error(t, a.ServeHTTP(w, r, next))
+
+	require.Len(t, mock.firewallRequests, 1, "one request must produce exactly one count")
+	assert.Equal(t, "waf:6001 | "+reasonInvalidCredentials, mock.firewallRequests[0].URL.Query().Get("reason"))
+	assert.Equal(t, "2", mock.firewallRequests[0].URL.Query().Get("weight"),
+		"two corroborating signals weigh 1 + 1")
+
+	// The same request without credentials must not be reported at all: no
+	// credentials is a first visit, not a deliberate attempt.
+	mock.firewallRequests = nil
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest(http.MethodGet, "/attack", nil)
+	r.RemoteAddr = "203.0.113.8:4321"
+
+	require.Error(t, a.ServeHTTP(w, r, next))
+	require.Len(t, mock.firewallRequests, 1,
+		"without credentials only the WAF signal remains, and it is still reported")
+	assert.Equal(t, "waf:6001", mock.firewallRequests[0].URL.Query().Get("reason"))
 }

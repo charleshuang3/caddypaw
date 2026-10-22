@@ -300,3 +300,57 @@ func (e *errorReader) Read(p []byte) (n int, err error) {
 func (e *errorReader) Close() error {
 	return nil
 }
+
+// TestWAFModule_Provision_IgnoresAfterAuth verifies the documented asymmetry:
+// the standalone paw_waf directive has no authentication context, so it keeps
+// blocking even when after_auth is configured. Provision warns about it (the
+// warning is not assertable here because caddy.Context supplies the logger);
+// what must hold is that after_auth never weakens paw_waf.
+func TestWAFModule_Provision_IgnoresAfterAuth(t *testing.T) {
+	for _, mode := range []string{AfterAuthDetectOnly, AfterAuthPhase1Only, AfterAuthSkip} {
+		t.Run(mode, func(t *testing.T) {
+			m := &wafModule{
+				Config: Config{
+					Directives: `SecRuleEngine On
+SecRule REQUEST_URI "@contains attack" "id:701,phase:1,deny,status:403"`,
+					AfterAuth: mode,
+				},
+			}
+			ctx, _ := caddy.NewContext(caddy.Context{Context: t.Context()})
+			require.NoError(t, m.Provision(ctx))
+			require.NotNil(t, m.waf)
+
+			req := httptest.NewRequest(http.MethodGet, "/attack", nil)
+			req.RemoteAddr = "1.2.3.4:12345"
+			result, err := m.waf.ProcessRequest(req)
+			require.NoError(t, err)
+			assert.True(t, result.Blocked, "paw_waf must keep blocking regardless of after_auth")
+			assert.Equal(t, http.StatusForbidden, result.Status)
+		})
+	}
+}
+
+// TestWAFModule_afterAuthIgnored pins which after_auth values produce the
+// "ignored by paw_waf" warning. Both spellings of the default (omitted and
+// explicit "block") must stay silent; the relaxed modes must warn.
+func TestWAFModule_afterAuthIgnored(t *testing.T) {
+	tests := []struct {
+		afterAuth  string
+		wantWarn   bool
+		wantReport string
+	}{
+		{afterAuth: "", wantWarn: false},
+		{afterAuth: AfterAuthBlock, wantWarn: false},
+		{afterAuth: AfterAuthDetectOnly, wantWarn: true, wantReport: AfterAuthDetectOnly},
+		{afterAuth: AfterAuthPhase1Only, wantWarn: true, wantReport: AfterAuthPhase1Only},
+		{afterAuth: AfterAuthSkip, wantWarn: true, wantReport: AfterAuthSkip},
+	}
+	for _, tt := range tests {
+		t.Run("after_auth="+tt.afterAuth, func(t *testing.T) {
+			m := &wafModule{Config: Config{AfterAuth: tt.afterAuth}}
+			mode, warned := m.afterAuthIgnored()
+			assert.Equal(t, tt.wantWarn, warned)
+			assert.Equal(t, tt.wantReport, mode)
+		})
+	}
+}

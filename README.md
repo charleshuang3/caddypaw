@@ -77,7 +77,10 @@ Covered scenarios:
   triggering automated firewall bans after exceeding the forgivable threshold.
 - **Embedded WAF in auth gateway**: `paw_auth { waf { ... } }` blocks attack
   traffic before authentication logic / redirects run, and enforces WAF checks
-  on bearer-token and cookie-authenticated routes.
+  on bearer-token and cookie-authenticated routes. The optional `after_auth`
+  mode (`detect_only` / `phase1_only` / `skip`) relaxes inspection for
+  authenticated requests only; public URLs are always inspected in blocking
+  mode.
 - **OWASP CRS 4.x inspection**: verifies embedded OWASP CRS rule loading
   (`@coraza.conf-recommended`, `@crs-setup.conf.example`, `@owasp_crs/*.conf`)
   and detection of common attacks (e.g. SQL injection).
@@ -136,9 +139,157 @@ app.example.com {
 }
 ```
 
+#### Post-authentication modes (`after_auth`)
+
+By default the embedded WAF runs *before* authentication, so it also inspects
+requests that end up with a 401 or a login redirect. That is the safest default,
+but it means a legitimate authenticated client can still be blocked by a false
+positive — a common annoyance for WebDAV, where large binary uploads and XML
+multipart bodies are hard for generic CRS rules to judge.
+
+`after_auth` makes the WAF's behaviour depend on the authentication result. The
+rule set is unchanged; only what happens *after* `paw_auth` authenticated the
+request differs.
+
+```caddyfile
+dav.example.com {
+	paw_auth {
+		basic_auth
+		client_id webdav
+		client_secret client_secret
+		roles admin
+		waf {
+			preset default
+			after_auth detect_only
+		}
+	}
+	reverse_proxy 127.0.0.1:8081
+}
+```
+
+| Request | `block` (default) | `detect_only` | `phase1_only` | `skip` |
+| --- | --- | --- | --- | --- |
+| Unauthenticated, rule matched | blocked + reported (1 pt) | **reported only**, still gets 401/302 (1 pt) | **reported only**, still gets 401/302 (1 pt) | **reported only**, still gets 401/302 (1 pt) |
+| Unauthenticated, rule matched and password rejected | blocked + reported (1 pt; authentication never runs) | **reported only**, still gets 401 (2 pts) | **reported only**, still gets 401 (2 pts) | **reported only**, still gets 401 (2 pts) |
+| Unauthenticated, no rule matched | rejected password reported as `basic_auth: invalid credentials` (1 pt); no credentials not reported (0 pts) | same | same | same |
+| `public_urls` match | blocked + reported | blocked + reported | blocked + reported | blocked + reported |
+| Authenticated, URI/header match (phase 1) | blocked + reported (1 pt) | **reported only** (0 pts) | blocked + reported (1 pt) | not inspected |
+| Authenticated, body match (phase 2) | blocked + reported (1 pt) | **reported only** (0 pts) | not inspected | not inspected |
+
+The points in parentheses are what the request spends from the per-IP budget (see
+[Ban threshold](#ban-threshold)); they never change the response the client sees.
+
+`block` is the default and is also what an omitted `after_auth` means, so write
+`after_auth block` or leave the option out entirely.
+
+A credential that was **presented and rejected** is reported in **every** mode,
+including `block`: a wrong password never trips a WAF rule, so without it password
+brute forcing would be invisible to the firewall. A request that presents **no**
+credentials at all is *not* reported: that is what every browser, health check,
+uptime probe and WebDAV client sends before it knows a protected path exists.
+`server_cookies` keeps its specific reasons (`invalid token on path: …`,
+`callback: …`); a plain login redirect (302) is normal user traffic and is never
+counted.
+
+- **`detect_only`** — authenticated traffic is still fully inspected, and every
+  match is logged (`waf rule matched on authenticated request ...`) and reported
+  to `/logerr` as `waf:<rule_id>`, but nothing is blocked. Matches on
+  authenticated requests are reported with `count=false`, so they appear in the
+  firewall log without ever contributing to a ban — tuning rules can never lock
+  a legitimate client out. Use it to collect the real rule IDs that trip your
+  application before tuning them away.
+- **`phase1_only`** — authenticated requests are checked on URI and headers
+  only, so bodies are never buffered. Violations still block. This is the
+  cheapest option that keeps detection: ideal for upload-heavy endpoints.
+- **`skip`** — no WAF evaluation for authenticated requests at all.
+
+Three consequences are worth stating explicitly:
+
+1. In any `after_auth` mode, authentication runs *before* the WAF, so a client
+   without credentials receives the normal 401 challenge / login redirect
+   instead of a WAF 403, and the WAF verdict is applied afterwards. This avoids
+   one classic pitfall: a WAF 403 preempting the 401 would deny the client the
+   `WWW-Authenticate` challenge it needs to retry with credentials.
+2. Unauthenticated requests that **do** trip a rule are still inspected, logged
+   and reported as `waf:<rule_id>` — they just keep their 401/302 status. That
+   keeps the ban pipeline fed for the most suspicious traffic (unauthenticated
+   probes) without breaking clients, and such reports **do** count towards a
+   ban: the request was not served. Each request produces **exactly one**
+   report, but that report carries every signal the request produced (see
+   [Ban threshold](#ban-threshold)), so a request that both fails authentication
+   and trips a rule costs two points instead of one.
+3. `detect_only` still reads and buffers request bodies; it only removes the
+   blocking. If the motivation is memory/CPU on large uploads, use
+   `phase1_only` or `skip`: those two never buffer a body, for authenticated and
+   unauthenticated requests alike. In `phase1_only` and `skip`, unauthenticated
+   probes are still inspected through phase 1 only, so a body-level rule can
+   never match them. Only `detect_only` builds a second, detection-only engine
+   next to the blocking one (which keeps guarding `public_urls`), so expect
+   roughly double the rule-compilation memory at startup only in that mode.
+
+### Ban threshold
+
+Reports from all sources share one per-IP budget (`pkg/firewall`).
+`forgivable.count` is a budget in **points**, not a number of events: each report
+spends its weight, and the IP is banned once a report no longer fits in the budget
+for `forgivable.duration_in_minute` (defaults: **3 points / 10 minutes → 10 minute
+ban**).
+
+| Signal | Weight |
+| --- | --- |
+| WAF rule matched, request refused (`waf:<id>`) | 1 |
+| Rejected password (`basic_auth: invalid credentials`) | 1 |
+| Invalid session token or broken login callback (`invalid token on path: …`, `callback: …`) | 1 |
+| A request refused **and** its password rejected (one report) | 2 |
+| Authenticated request matched in `detect_only` | 0 (observed, never bans) |
+| No credentials at all | not reported |
+
+One point is the cost of one independent signal, so the default budget of 3 points
+bans a plain violation on the fourth report — the same threshold as before weights
+existed — and a corroborated violation on the second.
+
+A rejected password is the only signal that proves intent: the client typed or
+replayed a secret and got it wrong, and no WAF rule can produce that evidence. A
+broken login flow (expired or rotated session token, failed callback) weighs the
+same single point: it is far more often a client bug than an attack, and treating
+it as intent would ban every session whenever the authn signing key is rotated.
+
+Weights add up, but a request is still reported **once**: the reasons are joined
+(`waf:949110 | basic_auth: invalid credentials`) so the ban log shows every
+signal, and the weights are summed (`/logerr?...&weight=2`). A request that both
+guesses a password and carries a malicious payload therefore spends 2 points at
+once — two independent signals are much stronger evidence than either alone —
+while a browser that merely opens a protected page spends nothing, and one that
+retries with a stale password spends 1 point per attempt.
+
+A weight is never partially accounted: if the remaining budget cannot cover it,
+the IP is banned rather than having the event rounded down. Conversely, a single
+report can never ban an IP on its own — the weight is capped at the budget — so
+banning always requires at least two reports within the window, and one
+malicious-looking request (or one forged `/logerr` call) cannot ban an IP by
+itself.
+
+Two signals can only corroborate each other when both are actually evaluated. In
+the default `block` mode the WAF refuses the request before authentication runs,
+so a blocked request always weighs 1 — that is not a limitation worth working
+around, since the request is already denied. Set `after_auth` if you want
+authentication to run first and the two signals to add up.
+
+The counter is bypassed in exactly one case: matches reported as *observed*
+(`/logerr?count=false`), which are written to the firewall log but consume no
+allowance and never ban. Only `detect_only` matches on **authenticated** requests
+use it, on the grounds that a request we served successfully should not be able
+to get its own client banned. A match on an **unauthenticated** request does
+count: the request was refused, so it is a real violation.
+
+`after_auth` only exists inside `paw_auth`; the standalone `paw_waf` directive
+has no authentication context and always behaves as `block`. Setting it there
+logs a startup warning and the value is ignored.
+
 ### OWASP CRS & Coraza Directives
 
 - **`preset default`**: Shorthand for the recommended full configuration — loads the embedded Coraza recommended base config plus the complete OWASP CRS (`load_owasp_crs` + the four standard `Include` lines). Mutually exclusive with `directives`. To tune CRS settings (e.g. paranoia level), keep using explicit `directives` with `SecAction setvar` overrides.
+- **`after_auth`**: Selects how `paw_auth` treats requests that authenticated successfully (`detect_only`, `phase1_only`, `skip`). It is a runtime policy, not a rule set, and therefore combines with any `preset` or `directives` value. Unset means `block`. See [Post-authentication modes](#post-authentication-modes-after_auth).
 - **`load_owasp_crs`**: Activates embedded OWASP CRS 4.x rules. You can reference:
   - `@coraza.conf-recommended` — recommended Coraza base configuration.
   - `@crs-setup.conf.example` — standard CRS initialization settings.

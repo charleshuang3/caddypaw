@@ -45,9 +45,31 @@ func (m *wafModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return m.Config.UnmarshalCaddyfile(d)
 }
 
+// afterAuthIgnored reports the configured mode when it cannot take effect in this
+// directive, together with whether it was set to something other than the default.
+//
+// after_auth depends on the authentication verdict, which only paw_auth knows.
+// Ignoring the option silently in paw_waf would leave the operator believing the
+// WAF is relaxed when it is not. AfterAuthMode is used so that an omitted value
+// and the explicit "block" spelling are both correctly treated as the default
+// rather than triggering a bogus warning.
+func (m *wafModule) afterAuthIgnored() (string, bool) {
+	mode := m.Config.AfterAuthMode()
+	if mode == AfterAuthBlock {
+		return "", false
+	}
+	return mode, true
+}
+
 // Provision sets up the module.
 func (m *wafModule) Provision(ctx caddy.Context) error {
 	m.logger = ctx.Logger(m)
+
+	if mode, ignored := m.afterAuthIgnored(); ignored {
+		m.logger.Warn("waf: after_auth is ignored by the standalone paw_waf directive; "+
+			"it only takes effect inside a paw_auth waf block, and paw_waf always blocks",
+			zap.String("after_auth", mode))
+	}
 
 	var firewallURL string
 	if app, err := ctx.AppIfConfigured("paw_global_option"); err == nil && app != nil {
@@ -71,19 +93,19 @@ func (m *wafModule) Provision(ctx caddy.Context) error {
 
 // ServeHTTP implements caddyhttp.MiddlewareHandler.
 func (m *wafModule) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	interrupted, status, ruleID, err := m.waf.ProcessRequest(r)
+	result, err := m.waf.ProcessRequest(r)
 	if err != nil {
 		m.logger.Error("waf evaluation error; failing open", zap.Error(err))
 		return next.ServeHTTP(w, r)
 	}
 
-	if interrupted {
-		reason := fmt.Sprintf("waf:%d", ruleID)
-		m.reporter.Report(r, reason)
+	if result.Blocked {
+		status := result.Status
 		if status == 0 {
 			status = http.StatusForbidden
 		}
-		return caddyhttp.Error(status, fmt.Errorf("waf rule %d triggered", ruleID))
+		m.reporter.Report(r, fmt.Sprintf("waf:%d", result.RuleID), WeightBlocked)
+		return caddyhttp.Error(status, fmt.Errorf("waf rule %d triggered", result.RuleID))
 	}
 
 	return next.ServeHTTP(w, r)
