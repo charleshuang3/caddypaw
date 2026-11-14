@@ -46,10 +46,18 @@ func (c *Config) AfterAuthMode() string {
 type Config struct {
 	// Preset names a bundled rule configuration. Currently only "default"
 	// is supported: it loads the recommended Coraza base config plus the
-	// full embedded OWASP CRS. Mutually exclusive with directives.
+	// full embedded OWASP CRS.
 	Preset       string `json:"preset,omitempty"`
 	LoadOWASPCRS bool   `json:"load_owasp_crs,omitempty"`
-	Directives   string `json:"directives,omitempty"`
+	// Directives is the complete rule set when Preset is empty. With a preset
+	// it is optional and extends the preset instead: it is inserted after the
+	// preset's base settings and before the CRS rule files, the place CRS
+	// reserves for exclusions that run before its rules (e.g. a SecRule with
+	// ctl:ruleRemoveTargetById). Startup-time directives that modify existing
+	// rules only see rules loaded before them: SecRuleRemoveById on a CRS rule
+	// is a silent no-op there, and SecRuleUpdateTargetById fails compilation
+	// with "rule not found".
+	Directives string `json:"directives,omitempty"`
 	// AfterAuth selects how paw_auth treats requests that authenticated
 	// successfully. It is a runtime policy orthogonal to the rule set, so it
 	// does not affect which rules are loaded. Empty means AfterAuthBlock; use
@@ -60,8 +68,14 @@ type Config struct {
 	AfterAuth string `json:"after_auth,omitempty"`
 }
 
-// defaultPresetDirectives is the directives block applied by preset "default".
-const defaultPresetDirectives = `Include @coraza.conf-recommended
+// crsRulesInclude loads the CRS rule files. It closes the "default" preset so
+// that operator directives can be inserted between the preset's base settings
+// and the rules they tune.
+const crsRulesInclude = "Include @owasp_crs/*.conf"
+
+// defaultPresetBase is the part of preset "default" that precedes the CRS rule
+// files. Rule IDs 10000-10099 are reserved for it.
+const defaultPresetBase = `Include @coraza.conf-recommended
 SecRuleEngine On
 Include @crs-setup.conf.example
 
@@ -96,9 +110,7 @@ SecRule REQUEST_URI "@beginsWith /socket.io/" \
     phase:1,\
     pass,\
     nolog,\
-    ctl:ruleRemoveById=920420"
-
-Include @owasp_crs/*.conf`
+    ctl:ruleRemoveById=920420"`
 
 // UnmarshalCaddyfile parses the WAF configuration from a Caddyfile block.
 func (c *Config) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -135,11 +147,13 @@ func (c *Config) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 // effectiveDirectives returns the directive block to compile, expanding Preset
-// on the fly. It is a pure function: nothing is written back to the config.
+// on the fly and inserting any Directives before the CRS rule files. It is a
+// pure function: nothing is written back to the config.
 //
 // Expansion has to be derived rather than memoised because paw_auth builds two
 // WAF instances from a single Config. Storing the expansion in Directives used to
-// make the second instance see "preset and directives are mutually exclusive".
+// make the second instance see the preset expansion as operator directives and
+// insert the whole preset a second time.
 func (c *Config) effectiveDirectives() (string, error) {
 	if c.Preset == "" {
 		if strings.TrimSpace(c.Directives) == "" {
@@ -150,10 +164,12 @@ func (c *Config) effectiveDirectives() (string, error) {
 	if c.Preset != "default" {
 		return "", fmt.Errorf("unknown waf preset %q (supported: default)", c.Preset)
 	}
-	if strings.TrimSpace(c.Directives) != "" {
-		return "", errors.New("waf preset and directives are mutually exclusive")
+	parts := []string{defaultPresetBase}
+	if extra := strings.TrimSpace(c.Directives); extra != "" {
+		parts = append(parts, extra)
 	}
-	return defaultPresetDirectives, nil
+	parts = append(parts, crsRulesInclude)
+	return strings.Join(parts, "\n\n"), nil
 }
 
 // loadsOWASPCRS reports whether the embedded CRS filesystem must be mounted.

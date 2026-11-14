@@ -2,6 +2,7 @@ package waf
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -168,6 +169,87 @@ func TestWAF_PresetDefault_TunedAllowances(t *testing.T) {
 	assert.True(t, result.Blocked, "SQLi attack must be blocked")
 	assert.Equal(t, http.StatusForbidden, result.Status)
 	assert.Equal(t, 949110, result.RuleID)
+}
+
+// TestWAF_PresetDefault_WithExclusion checks that directives given next to the
+// preset are compiled and take effect: a runtime exclusion of one JSON field lets
+// a false positive through while the same payload in any other field is blocked.
+// The insertion point itself is asserted in TestPresetWithDirectives.
+func TestWAF_PresetDefault_WithExclusion(t *testing.T) {
+	// Multi-line chat text that the CRS Unix RCE rules (932xxx) read as shell
+	// commands following a newline.
+	const prompt = "Chapters:\n00:08:48 - What to Watch\n00:11:22 - Manish Kabra on the AI Trade\nls -la\ncat notes.txt"
+	exclusion := `SecRule REQUEST_URI "@beginsWith /api/" "id:20001,phase:1,pass,nolog,ctl:ruleRemoveTargetByTag=OWASP_CRS;ARGS:json.prompt"`
+
+	post := func(t *testing.T, engine *WAF, field string) Result {
+		t.Helper()
+		body, err := json.Marshal(map[string]string{field: prompt})
+		require.NoError(t, err)
+		// A path-only target, as Caddy hands it to the handler.
+		req := httptest.NewRequest(http.MethodPost, "/api/agents/a/message", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = "10.0.0.1:12345"
+		res, err := engine.ProcessRequest(req)
+		require.NoError(t, err)
+		return res
+	}
+
+	logger := zaptest.NewLogger(t)
+	plain, err := NewWAF(&Config{Preset: "default"}, logger)
+	require.NoError(t, err)
+	tuned, err := NewWAF(&Config{Preset: "default", Directives: exclusion}, logger)
+	require.NoError(t, err)
+
+	res := post(t, plain, "prompt")
+	assert.True(t, res.Blocked, "the bare preset must block the false positive")
+	assert.Equal(t, 949110, res.RuleID)
+
+	res = post(t, tuned, "prompt")
+	assert.False(t, res.Blocked, "the excluded field must not be inspected")
+
+	res = post(t, tuned, "chatId")
+	assert.True(t, res.Blocked, "other fields must still be inspected")
+	assert.Equal(t, 949110, res.RuleID)
+}
+
+// TestWAF_PresetDefault_DirectivesOverrideBase checks that directives given next
+// to the preset can override the preset's base settings, and that a detect-only
+// instance stays detect-only whatever engine mode the operator sets.
+func TestWAF_PresetDefault_DirectivesOverrideBase(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	sqli := func(t *testing.T, engine *WAF) Result {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/?q=1%20UNION%20SELECT%201,2,3--", http.NoBody)
+		req.RemoteAddr = "10.0.0.1:12345"
+		res, err := engine.ProcessRequest(req)
+		require.NoError(t, err)
+		return res
+	}
+
+	t.Run("operator DetectionOnly overrides the preset engine mode", func(t *testing.T) {
+		engine, err := NewWAF(&Config{Preset: "default", Directives: "SecRuleEngine DetectionOnly"}, logger)
+		require.NoError(t, err)
+		res := sqli(t, engine)
+		assert.False(t, res.Blocked, "DetectionOnly must not block")
+		assert.NotEmpty(t, res.Detected, "rules must still be evaluated")
+	})
+
+	t.Run("operator anomaly threshold overrides the preset threshold", func(t *testing.T) {
+		raise := `SecAction "id:20002,phase:1,nolog,pass,setvar:tx.inbound_anomaly_score_threshold=1000"`
+		engine, err := NewWAF(&Config{Preset: "default", Directives: raise}, logger)
+		require.NoError(t, err)
+		res := sqli(t, engine)
+		assert.False(t, res.Blocked, "a raised threshold must let the request through")
+		assert.NotEmpty(t, res.Detected)
+	})
+
+	t.Run("detect-only instance ignores operator SecRuleEngine On", func(t *testing.T) {
+		engine, err := NewWAFDetectOnly(&Config{Preset: "default", Directives: "SecRuleEngine On"}, logger)
+		require.NoError(t, err)
+		res := sqli(t, engine)
+		assert.False(t, res.Blocked, "the forced DetectionOnly must win")
+		assert.NotEmpty(t, res.Detected)
+	})
 }
 
 func TestWAF_InterruptionStatusMapping(t *testing.T) {

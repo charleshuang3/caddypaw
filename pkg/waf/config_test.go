@@ -34,13 +34,54 @@ func TestPresetErrors(t *testing.T) {
 		cfg  Config
 	}{
 		{"unknown preset", Config{Preset: "strict"}},
-		{"preset with directives", Config{Preset: "default", Directives: "SecRuleEngine On"}},
+		{"unknown preset with directives", Config{Preset: "strict", Directives: "SecRuleEngine On"}},
 	}
 	for _, tt := range tests {
 		if err := tt.cfg.Validate(); err == nil {
 			t.Errorf("%s: expected error, got nil", tt.name)
 		}
 	}
+}
+
+// TestPresetWithDirectives checks that operator directives extend the preset:
+// they come after the preset's base settings, so they can override them, and
+// before the CRS rule files, so runtime exclusions are in place before the rules
+// they tune.
+func TestPresetWithDirectives(t *testing.T) {
+	const extra = `SecRule REQUEST_URI "@beginsWith /api/" "id:20001,phase:1,pass,nolog,ctl:ruleRemoveTargetByTag=OWASP_CRS;ARGS:json.prompt"`
+	c := Config{Preset: "default", Directives: "\n\t" + extra + "\n"}
+	require.NoError(t, c.Validate())
+
+	directives, err := c.effectiveDirectives()
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(directives, defaultPresetBase), "preset base must come first")
+	assert.True(t, strings.HasSuffix(directives, crsRulesInclude), "CRS rules must come last")
+	base := strings.Index(directives, "id:10003")
+	ext := strings.Index(directives, extra)
+	rules := strings.Index(directives, crsRulesInclude)
+	require.NotEqual(t, -1, ext, "operator directives missing")
+	assert.Less(t, base, ext, "operator directives must follow the preset base")
+	assert.Less(t, ext, rules, "operator directives must precede the CRS rules")
+	assert.Equal(t, 1, strings.Count(directives, crsRulesInclude), "CRS rules must be included once")
+
+	// Whitespace-only directives are the same as none.
+	blank := Config{Preset: "default", Directives: " \n\t"}
+	plain := Config{Preset: "default"}
+	got, err := blank.effectiveDirectives()
+	require.NoError(t, err)
+	want, err := plain.effectiveDirectives()
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+}
+
+func TestPresetWithDirectivesCaddyfile(t *testing.T) {
+	var c Config
+	d := caddyfile.NewTestDispenser("waf {\n\tpreset default\n\tdirectives `SecRuleEngine DetectionOnly`\n}")
+	d.Next() // consume the directive name, as handler wrappers do
+	require.NoError(t, c.UnmarshalCaddyfile(d))
+	assert.Equal(t, "default", c.Preset)
+	assert.Equal(t, "SecRuleEngine DetectionOnly", c.Directives)
+	require.NoError(t, c.Validate())
 }
 
 func TestPresetCaddyfile(t *testing.T) {
@@ -115,8 +156,8 @@ func TestAfterAuthValidate(t *testing.T) {
 // TestValidate_IsStateless guards the paw_auth provisioning path, which builds
 // two WAF instances from one Config and therefore calls Validate twice (once per
 // instance). Validation must not write anything back, otherwise the second call
-// trips the "preset and directives are mutually exclusive" check. Regression: the
-// expansion used to be memoised into Directives.
+// would see the preset expansion as operator directives and insert the whole
+// preset again. Regression: the expansion used to be memoised into Directives.
 func TestValidate_IsStateless(t *testing.T) {
 	for _, mode := range []string{"", AfterAuthBlock, AfterAuthDetectOnly, AfterAuthPhase1Only, AfterAuthSkip} {
 		t.Run("after_auth="+mode, func(t *testing.T) {
@@ -147,10 +188,18 @@ func TestValidate_IsStateless(t *testing.T) {
 		assert.False(t, c.loadsOWASPCRS())
 	})
 
-	// A genuinely conflicting config must still be rejected.
-	t.Run("preset plus directives still rejected", func(t *testing.T) {
-		c := &Config{Preset: "default", Directives: "SecRuleEngine On"}
-		require.Error(t, c.Validate())
+	t.Run("preset plus directives", func(t *testing.T) {
+		const extra = "SecRuleEngine DetectionOnly"
+		c := &Config{Preset: "default", Directives: extra}
+		require.NoError(t, c.Validate())
+		directives, err := c.effectiveDirectives()
+		require.NoError(t, err)
+		require.NoError(t, c.Validate(), "second Validate must not fail")
+		again, err := c.effectiveDirectives()
+		require.NoError(t, err)
+		assert.Equal(t, directives, again, "expansion must be stable")
+		assert.Equal(t, extra, c.Directives, "Validate must not rewrite the config")
+		assert.Equal(t, 1, strings.Count(directives, crsRulesInclude))
 	})
 }
 

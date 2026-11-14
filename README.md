@@ -286,9 +286,49 @@ count: the request was refused, so it is a real violation.
 has no authentication context and always behaves as `block`. Setting it there
 logs a startup warning and the value is ignored.
 
+### Tuning the preset
+
+`preset default` and `directives` can be used together. The directives then
+extend the preset instead of replacing it: they are inserted after the preset's
+base settings (Coraza recommended config, `crs-setup`, the preset's own
+allowances) and before the CRS rule files. That is where CRS expects
+"before-CRS" rule exclusions, so a rule that removes a target at runtime is in
+place before the rules it tunes:
+
+```caddyfile
+asgard.example.com {
+	paw_waf {
+		preset default
+		directives `
+			# Chat prompts are free text sent to an LLM, never to a shell,
+			# SQL or HTML sink: do not inspect that JSON field on the API.
+			SecRule REQUEST_URI "@beginsWith /api/" \
+				"id:20001,phase:1,pass,nolog,\
+				ctl:ruleRemoveTargetByTag=OWASP_CRS;ARGS:json.prompt"
+		`
+	}
+	reverse_proxy 127.0.0.1:7000
+}
+```
+
+Because they come after the base settings, the directives can also override
+them, e.g. `SecAction "id:20002,phase:1,nolog,pass,setvar:tx.inbound_anomaly_score_threshold=15"`
+or `SecRuleEngine DetectionOnly`.
+
+Keep in mind:
+
+- Rule IDs 10000–10099 are used by the preset; pick IDs outside that range.
+- Startup-time directives that modify existing rules only see rules that are
+  already loaded, and the CRS rule files are loaded after your directives:
+  `SecRuleRemoveById` on a CRS rule silently does nothing, while
+  `SecRuleUpdateTargetById` / `SecRuleUpdateActionById` on a CRS rule fail
+  startup with "rule not found". Use the runtime `ctl:` actions shown above
+  instead. For full control over the order, drop the preset and write the
+  complete `directives` block yourself.
+
 ### OWASP CRS & Coraza Directives
 
-- **`preset default`**: Shorthand for the recommended full configuration — loads the embedded Coraza recommended base config plus the complete OWASP CRS (`load_owasp_crs` + the four standard `Include` lines). Mutually exclusive with `directives`. To tune CRS settings (e.g. paranoia level), keep using explicit `directives` with `SecAction setvar` overrides.
+- **`preset default`**: Shorthand for the recommended full configuration — loads the embedded Coraza recommended base config plus the complete OWASP CRS (`load_owasp_crs` + the four standard `Include` lines). It can be combined with `directives` to tune it, see [Tuning the preset](#tuning-the-preset).
 - **`after_auth`**: Selects how `paw_auth` treats requests that authenticated successfully (`detect_only`, `phase1_only`, `skip`). It is a runtime policy, not a rule set, and therefore combines with any `preset` or `directives` value. Unset means `block`. See [Post-authentication modes](#post-authentication-modes-after_auth).
 - **`load_owasp_crs`**: Activates embedded OWASP CRS 4.x rules. You can reference:
   - `@coraza.conf-recommended` — recommended Coraza base configuration.
