@@ -5,7 +5,7 @@ default:
 export PATH := `go env GOPATH` + "/bin:" + env('PATH')
 
 # Caddy version to build
-CADDY_VERSION := "v2.11.4"
+CADDY_VERSION := "v2.11.9"
 
 # Build all packages
 build:
