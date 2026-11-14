@@ -189,6 +189,24 @@ type LoginPageData struct {
 	GoogleLoginURL     string
 }
 
+// LoginMethodCount returns how many login methods the page offers. Update it
+// when adding a new login method.
+func (d *LoginPageData) LoginMethodCount() int {
+	n := 0
+	for _, allowed := range []bool{d.AllowPasswordLogin, d.AllowGoogleLogin} {
+		if allowed {
+			n++
+		}
+	}
+	return n
+}
+
+// MultipleLoginMethods reports whether the user has a login method to choose
+// (and therefore to remember).
+func (d *LoginPageData) MultipleLoginMethods() bool {
+	return d.LoginMethodCount() > 1
+}
+
 // RenderLoginPage renders the login page with the provided state value.
 func (o *OpenIDProvider) RenderLoginPage(w http.ResponseWriter, data *LoginPageData) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

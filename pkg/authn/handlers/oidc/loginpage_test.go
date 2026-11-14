@@ -34,6 +34,7 @@ func TestRenderLoginPage(t *testing.T) {
 		wantPasswordForm   bool
 		wantGoogleButton   bool
 		wantOrDivider      bool
+		wantRememberChoice bool
 	}{
 		{
 			name:               "valid state with both login options",
@@ -45,6 +46,7 @@ func TestRenderLoginPage(t *testing.T) {
 			wantPasswordForm:   true,
 			wantGoogleButton:   true,
 			wantOrDivider:      true,
+			wantRememberChoice: true,
 		},
 		{
 			name:               "valid state with only password login",
@@ -124,6 +126,33 @@ func TestRenderLoginPage(t *testing.T) {
 			} else {
 				assert.NotContains(t, body, "class=\"or-divider\"", "RenderLoginPage() output should not contain OR divider when not both login options are allowed")
 			}
+
+			// Remember-my-choice is only offered when there is a choice to remember.
+			if tt.wantRememberChoice {
+				assert.Contains(t, body, "id=\"rememberChoice\"", "RenderLoginPage() output should contain remember-choice checkbox when both login options are allowed")
+			} else {
+				assert.NotContains(t, body, "id=\"rememberChoice\"", "RenderLoginPage() output should not contain remember-choice checkbox when not both login options are allowed")
+			}
+		})
+	}
+}
+
+func TestLoginPageDataMultipleLoginMethods(t *testing.T) {
+	tests := []struct {
+		name     string
+		data     LoginPageData
+		wantN    int
+		wantMult bool
+	}{
+		{"none", LoginPageData{}, 0, false},
+		{"password only", LoginPageData{AllowPasswordLogin: true}, 1, false},
+		{"google only", LoginPageData{AllowGoogleLogin: true}, 1, false},
+		{"password and google", LoginPageData{AllowPasswordLogin: true, AllowGoogleLogin: true}, 2, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.wantN, tt.data.LoginMethodCount())
+			assert.Equal(t, tt.wantMult, tt.data.MultipleLoginMethods())
 		})
 	}
 }

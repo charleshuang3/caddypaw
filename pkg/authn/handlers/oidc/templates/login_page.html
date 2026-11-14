@@ -149,21 +149,50 @@
             background-color: #218838;
             color: white;
         }
+
+        .remember-choice {
+            margin-top: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            color: #555;
+            font-size: 0.9em;
+        }
+
+        .remember-choice label {
+            display: inline;
+            margin: 0;
+            font-weight: normal;
+            font-size: 1em;
+            cursor: pointer;
+        }
+
+        .redirect-notice {
+            color: #555;
+        }
+
+        .redirect-notice a {
+            display: inline-block;
+            margin-top: 15px;
+            color: #007bff;
+        }
     </style>
 </head>
 
 <body>
     <div class="login-container">
         <h2>{{.Title}}</h2>
+        <div id="loginChoices">
         {{if .AllowPasswordLogin}}
-        <form id="loginForm" action="/user/login" method="post">
+        <form id="loginForm" action="/user/login" method="post" data-login-method="password">
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" required>
+                <input type="text" id="username" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
             </div>
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" id="password" name="password" required>
+                <input type="password" id="password" name="password" autocomplete="current-password" required>
             </div>
             <input type="hidden" name="state" value="{{.State}}">
 
@@ -178,9 +207,24 @@
         {{end}}
 
         {{if .AllowGoogleLogin}}
-        <a href="{{.GoogleLoginURL}}" class="google-login-button">
+        <a href="{{.GoogleLoginURL}}" class="google-login-button" data-login-method="google" data-login-name="Google">
             <img src="/static/google-logo.png" alt="Google logo"> Sign in with Google (Registered Only)
         </a>
+        {{end}}
+
+        {{if .MultipleLoginMethods}}
+        <div class="remember-choice">
+            <input type="checkbox" id="rememberChoice">
+            <label for="rememberChoice">Remember my choice</label>
+        </div>
+        {{end}}
+        </div>
+
+        {{if .MultipleLoginMethods}}
+        <div id="redirectNotice" class="redirect-notice" hidden>
+            <p>Redirecting to <span id="redirectTarget"></span> sign-in&hellip;</p>
+            <a href="#" id="chooseAnother">Choose another sign-in method</a>
+        </div>
         {{end}}
     </div>
 
@@ -196,6 +240,83 @@
                 event.preventDefault();
             }
         });
+    </script>
+    {{end}}
+
+    {{if .MultipleLoginMethods}}
+    <script>
+        (function () {
+            // Remembers the chosen sign-in method in localStorage so the user
+            // does not have to pick it every time. Every login method on the
+            // page is tagged with data-login-method: a <form> is a local
+            // method (remembered on submit, focused on return), an <a> is a
+            // redirect-based IdP (remembered on click, auto-followed on return).
+            var KEY = 'caddypaw.authn.loginMethod';
+            var REDIRECT_DELAY_MS = 1500;
+
+            function load() {
+                try { return window.localStorage.getItem(KEY); } catch (e) { return null; }
+            }
+            function save(v) {
+                try {
+                    if (v) { window.localStorage.setItem(KEY, v); } else { window.localStorage.removeItem(KEY); }
+                } catch (e) { /* storage unavailable: ignore */ }
+            }
+
+            var remember = document.getElementById('rememberChoice');
+            var choices = document.getElementById('loginChoices');
+            var notice = document.getElementById('redirectNotice');
+            var methods = {};
+
+            document.querySelectorAll('[data-login-method]').forEach(function (el) {
+                var method = el.getAttribute('data-login-method');
+                methods[method] = el;
+                if (el.tagName === 'FORM') {
+                    el.addEventListener('submit', function (event) {
+                        if (!event.defaultPrevented) { save(remember.checked ? method : null); }
+                    });
+                } else {
+                    el.addEventListener('click', function () { save(remember.checked ? method : null); });
+                }
+            });
+
+            // A remembered method this client does not offer is ignored (but
+            // kept, since another client may offer it).
+            var el = methods[load()];
+            if (!el) { return; }
+            remember.checked = true;
+
+            if (el.tagName === 'FORM') {
+                var first = el.querySelector('input:not([type=hidden])');
+                if (first) { first.focus(); }
+                return;
+            }
+
+            // Redirect-based IdP: give the user a short window to opt out.
+            document.getElementById('redirectTarget').textContent =
+                el.getAttribute('data-login-name') || el.getAttribute('data-login-method');
+            var chooseAnother = document.getElementById('chooseAnother');
+            choices.hidden = true;
+            notice.hidden = false;
+            // Move focus to the opt-out link so keyboard and screen reader
+            // users land on the notice and can cancel immediately.
+            chooseAnother.focus();
+            var timer = setTimeout(function () {
+                window.location.href = el.href;
+            }, REDIRECT_DELAY_MS);
+            chooseAnother.addEventListener('click', function (event) {
+                event.preventDefault();
+                clearTimeout(timer);
+                save(null);
+                remember.checked = false;
+                notice.hidden = true;
+                choices.hidden = false;
+                // The focused link is now hidden; move focus to the first
+                // control of the restored choices.
+                var first = choices.querySelector('input:not([type=hidden]), a[href], button');
+                if (first) { first.focus(); }
+            });
+        })();
     </script>
     {{end}}
 </body>
