@@ -30,7 +30,7 @@ just tidy         # go mod tidy
 
 Before considering work done, run: `just lint && just build && just test && just fmt-check`.
 
-`golangci-lint` and `goimports` are expected on PATH (`just` prepends `$(go env GOPATH)/bin`). Go toolchain: 1.27.1 (see `go.mod`). CI also pins these versions in `.github/workflows/test-on-push.yml` — keep them in sync when upgrading.
+`golangci-lint` and `goimports` are expected on PATH (`just` prepends `$(go env GOPATH)/bin`). Go toolchain: 1.27.3 (see `go.mod`). CI also pins these versions in `.github/workflows/test-on-push.yml` — keep them in sync when upgrading.
 
 ## Layout notes
 
