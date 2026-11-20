@@ -1,6 +1,7 @@
 package oidc
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"net/http"
@@ -230,6 +231,10 @@ type handleTokenRefreshTokenParams struct {
 	RefreshToken string `form:"refresh_token" binding:"required"`
 }
 
+// refreshTokenReuseGracePeriod is how long after its first use a refresh token
+// can still be exchanged. It absorbs concurrent refreshes from multiple tabs.
+const refreshTokenReuseGracePeriod = time.Minute
+
 func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 	params := &handleTokenRefreshTokenParams{}
 
@@ -318,7 +323,9 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 		return
 	}
 
-	if refreshToken.Used {
+	// A used token is accepted again within a short grace period so that
+	// several tabs/requests refreshing at the same moment do not fail.
+	if refreshToken.Used && (refreshToken.UsedAt == nil || time.Since(*refreshToken.UsedAt) > refreshTokenReuseGracePeriod) {
 		// Replay attack
 		logger.Error().Msg("Replay attack detected")
 		responseTokenError(c, http.StatusBadRequest, "invalid_grant", "Used refresh token")
@@ -357,8 +364,7 @@ func (o *OpenIDProvider) handleTokenRefreshToken(c *gin.Context) {
 	}
 
 	// Mark the token used
-	refreshToken.Used = true
-	if err := storage.UpdateRefreshToken(o.db, refreshToken); err != nil {
+	if err := storage.MarkRefreshTokenUsed(o.db, refreshToken); err != nil {
 		logger.Error().Err(err).Msg("Database error during refresh token token request update refresh token")
 		responseTokenError(c, http.StatusInternalServerError, "temporarily_unavailable", "Database error")
 		return
@@ -451,6 +457,9 @@ func (o *OpenIDProvider) genRefreshToken(user *models.User, client *models.Clien
 	token, err := jwt.NewBuilder().
 		Issuer(o.config.Issuer).
 		IssuedAt(time.Now()).
+		// A random ID keeps tokens issued in the same second distinct, as the
+		// signature is the primary key in the database.
+		JwtID(rand.Text()).
 		Expiration(time.Now().Add(client.RefreshTokenTTLDuration())).
 		Audience([]string{client.ClientID}).
 		Subject(user.Username).

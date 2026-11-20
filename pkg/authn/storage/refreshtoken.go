@@ -24,8 +24,22 @@ func GetRefreshTokenBySign(db *gormw.DB, sign string) (*models.RefreshToken, err
 	return o, err
 }
 
-func UpdateRefreshToken(db *gormw.DB, refreshToken *models.RefreshToken) error {
-	return db.Model(refreshToken).Update("used", true).Error
+// MarkRefreshTokenUsed marks the token as used and records the first use time.
+// It is a no-op when the token was already marked, so concurrent exchanges keep
+// the original used_at and the grace period is not extended.
+func MarkRefreshTokenUsed(db *gormw.DB, refreshToken *models.RefreshToken) error {
+	now := time.Now()
+	res := db.Model(&models.RefreshToken{}).
+		Where("sign = ? AND used = ?", refreshToken.Sign, false).
+		Updates(map[string]any{"used": true, "used_at": now})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected > 0 {
+		refreshToken.Used = true
+		refreshToken.UsedAt = &now
+	}
+	return nil
 }
 
 // Refresh token will exists in database forever if not register a cleaner.

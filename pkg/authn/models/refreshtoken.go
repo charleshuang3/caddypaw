@@ -11,4 +11,5 @@ type RefreshToken struct {
 	ExpiresAt time.Time
 	Revoked   bool
 	Used      bool
+	UsedAt    *time.Time // when the token was first exchanged; enables the reuse grace period
 }

@@ -1347,3 +1347,51 @@ func TestHandleTokenRefreshToken_Error(t *testing.T) {
 		})
 	}
 }
+
+// TestHandleTokenRefreshToken_ReuseGracePeriod checks that a used refresh token
+// can be exchanged again shortly after its first use (multiple tabs refreshing
+// at once), but not once the grace period has passed.
+func TestHandleTokenRefreshToken_ReuseGracePeriod(t *testing.T) {
+	provider, db, router := setupTestProviderForTokenRequest(t)
+	user, err := storage.GetUserByID(db, 1)
+	require.NoError(t, err)
+	client := &models.Client{ClientID: "existing-client", RefreshTokenTTL: 3600}
+	scopes := []string{"offline_access"}
+
+	refresh := func(token string) *httptest.ResponseRecorder {
+		formData := url.Values{
+			"grant_type":    {"refresh_token"},
+			"refresh_token": {token},
+			"client_id":     {"existing-client"},
+			"client_secret": {"correct-secret"},
+		}
+		req, err := http.NewRequest(http.MethodPost, "/oauth2/token", strings.NewReader(formData.Encode()))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	token, err := provider.genRefreshToken(user, client, scopes)
+	require.NoError(t, err)
+	sign := strings.Split(token, ".")[2]
+	require.NoError(t, storage.AddRefreshToken(db, &models.RefreshToken{
+		Sign: sign, UserID: user.ID, ExpiresAt: time.Now().Add(time.Hour),
+	}))
+
+	first := refresh(token)
+	require.Equal(t, http.StatusOK, first.Code, first.Body.String())
+	// Immediate second use (same second) succeeds and yields a distinct token.
+	second := refresh(token)
+	require.Equal(t, http.StatusOK, second.Code, second.Body.String())
+	var r1, r2 handleTokenResponse
+	require.NoError(t, json.Unmarshal(first.Body.Bytes(), &r1))
+	require.NoError(t, json.Unmarshal(second.Body.Bytes(), &r2))
+	assert.NotEqual(t, r1.RefreshToken, r2.RefreshToken)
+
+	// Past the grace period the token is rejected.
+	old := time.Now().Add(-2 * time.Minute)
+	require.NoError(t, db.Model(&models.RefreshToken{}).Where("sign = ?", sign).Update("used_at", old).Error)
+	assert.Equal(t, http.StatusBadRequest, refresh(token).Code)
+}
