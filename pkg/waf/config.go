@@ -110,7 +110,20 @@ SecRule REQUEST_URI "@beginsWith /socket.io/" \
     phase:1,\
     pass,\
     nolog,\
-    ctl:ruleRemoveById=920420"`
+    ctl:ruleRemoveById=920420"
+
+# OCI/Docker registry API (/v2/...): image pushes use PUT/PATCH/DELETE with
+# binary (octet-stream, gzip) blob bodies. Allow those methods and content
+# types, and skip body inspection, since layer data is opaque and would
+# otherwise trip generic rules (920270, 921150, 920540, ...).
+SecRule REQUEST_FILENAME "@rx ^/v2/.+/(blobs|manifests)/" \
+    "id:10004,\
+    phase:1,\
+    pass,\
+    nolog,\
+    ctl:ruleRemoveById=911100,\
+    ctl:ruleRemoveById=920420,\
+    ctl:requestBodyAccess=Off"`
 
 // UnmarshalCaddyfile parses the WAF configuration from a Caddyfile block.
 func (c *Config) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {

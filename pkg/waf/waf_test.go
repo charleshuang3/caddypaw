@@ -438,3 +438,27 @@ func TestWAF_DetectOnly_PresetDefault(t *testing.T) {
 	// the anomaly aggregator rather than the literal last match.
 	assert.Equal(t, 949110, result.ReportRuleID())
 }
+
+// TestWAF_PresetDefault_RegistryPush checks that OCI registry blob/manifest
+// uploads (PUT, octet-stream/gzip bodies) are not blocked by the preset.
+func TestWAF_PresetDefault_RegistryPush(t *testing.T) {
+	wafEngine, err := NewWAF(&Config{Preset: "default"}, zaptest.NewLogger(t))
+	require.NoError(t, err)
+
+	body := "\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff\r\n\x00\x01"
+	req := httptest.NewRequest(http.MethodPut,
+		"http://example.com/v2/chao/antou/blobs/uploads/abc?digest=sha256%3Ac941", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.RemoteAddr = "10.0.0.1:12345"
+	result, err := wafEngine.ProcessRequest(req)
+	require.NoError(t, err)
+	assert.False(t, result.Blocked, "registry blob upload should not be blocked")
+
+	// The same PUT outside the registry path is still blocked.
+	req = httptest.NewRequest(http.MethodPut, "http://example.com/other", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.RemoteAddr = "10.0.0.1:12345"
+	result, err = wafEngine.ProcessRequest(req)
+	require.NoError(t, err)
+	assert.True(t, result.Blocked)
+}
