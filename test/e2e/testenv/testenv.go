@@ -9,6 +9,7 @@
 package testenv
 
 import (
+	"context"
 	"io"
 	"net"
 	"net/http"
@@ -39,10 +40,12 @@ import (
 
 	authnconfig "github.com/charleshuang3/caddypaw/pkg/authn/config"
 	"github.com/charleshuang3/caddypaw/pkg/authn/gormw"
+	"github.com/charleshuang3/caddypaw/pkg/authn/handlers/dashboard"
 	fwhandler "github.com/charleshuang3/caddypaw/pkg/authn/handlers/firewall"
 	"github.com/charleshuang3/caddypaw/pkg/authn/handlers/oidc"
 	"github.com/charleshuang3/caddypaw/pkg/authn/handlers/statisfiles"
 	"github.com/charleshuang3/caddypaw/pkg/authn/models"
+	"github.com/charleshuang3/caddypaw/pkg/authn/storage"
 	authntestdata "github.com/charleshuang3/caddypaw/pkg/authn/testdata"
 	"github.com/charleshuang3/caddypaw/pkg/firewall/memory"
 )
@@ -213,9 +216,19 @@ func (c *Cluster) startAuthn(whitelist []string) {
 	c.MemFirewall = fwMiddleware.MemoryFirewall()
 	require.NotNil(t, c.MemFirewall)
 
+	recorder := storage.NewSecurityEventRecorder(db, 0)
+	fwMiddleware.SetEventHook(recorder.Record)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = recorder.Close(ctx)
+	})
+
 	fwRouter := gin.New()
 	fwRouter.Use(fwMiddleware.Middleware())
 	fwMiddleware.RegisterHandlers(fwRouter.Group("/"))
+	dash := dashboard.New(db, "")
+	dash.RegisterHandlers(fwRouter.Group("/"))
 	c.fwSrv = httptest.NewServer(fwRouter)
 	t.Cleanup(c.fwSrv.Close)
 	c.FirewallURL = c.fwSrv.URL

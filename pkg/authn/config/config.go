@@ -17,6 +17,29 @@ var (
 	logger = log.With().Str("component", "config").Logger()
 )
 
+const defaultDashboardRetentionDays = 14
+
+type DashboardConfig struct {
+	Enabled       *bool  `yaml:"enabled"`
+	RetentionDays uint   `yaml:"retention_days"`
+	WebUIDir      string `yaml:"webui_dir"`
+}
+
+// IsEnabled reports whether security event persistence and dashboard API are enabled.
+func (d *DashboardConfig) IsEnabled() bool {
+	return d.Enabled == nil || *d.Enabled
+}
+
+func (d *DashboardConfig) applyDefaults() {
+	if d.Enabled == nil {
+		enabled := true
+		d.Enabled = &enabled
+	}
+	if d.RetentionDays == 0 {
+		d.RetentionDays = defaultDashboardRetentionDays
+	}
+}
+
 type Config struct {
 	Port            uint                      `yaml:"port"`
 	BanHandlersPort uint                      `yaml:"ban_handlers_port"`
@@ -25,6 +48,7 @@ type Config struct {
 	OIDC            oidc.OIDCProviderConfig   `yaml:"oidc"`
 	DB              gormw.Config              `yaml:"db"`
 	Firewall        middleware.FirewallConfig `yaml:"firewall"`
+	Dashboard       DashboardConfig           `yaml:"dashboard"`
 }
 
 func LoadConfig(path string) *Config {
@@ -88,4 +112,6 @@ func (c *Config) validate() {
 	c.OIDC.Validate()
 
 	c.Firewall.Validate()
+
+	c.Dashboard.applyDefaults()
 }

@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/charleshuang3/caddypaw/pkg/authn/config"
 	"github.com/charleshuang3/caddypaw/pkg/authn/gormw"
+	"github.com/charleshuang3/caddypaw/pkg/authn/handlers/dashboard"
 	"github.com/charleshuang3/caddypaw/pkg/authn/handlers/firewall"
 	"github.com/charleshuang3/caddypaw/pkg/authn/handlers/oidc"
 	"github.com/charleshuang3/caddypaw/pkg/authn/handlers/statisfiles"
@@ -58,6 +61,12 @@ func main() {
 
 	// add firewall middleware
 	fw := firewall.New(&cfg.Firewall)
+	var eventRecorder *storage.SecurityEventRecorder
+	if cfg.Dashboard.IsEnabled() {
+		eventRecorder = storage.NewSecurityEventRecorder(db, 0)
+		fw.SetEventHook(eventRecorder.Record)
+		storage.RegisterSecurityEventsCleaner(scheduler, db, cfg.Dashboard.RetentionDays)
+	}
 	router.Use(fw.Middleware())
 
 	// Register OIDC handlers
@@ -70,15 +79,19 @@ func main() {
 	// firewall handler
 	fwRouter := newRouter(cfg.TrustedProxies)
 	fw.RegisterHandlers(fwRouter.Group("/"))
+	if cfg.Dashboard.IsEnabled() {
+		dashHandler := dashboard.New(db, cfg.Dashboard.WebUIDir)
+		dashHandler.RegisterHandlers(fwRouter.Group("/"))
+		dashHandler.RegisterStatic(fwRouter)
+	}
 
 	fwServer := startServer("firewall", cfg.BanHandlersPort, fwRouter)
 
 	// Wait for interrupt signal to gracefully shutdown the server)
 
 	c := make(chan os.Signal, 1)
-	// We'll accept graceful shutdowns when quit via SIGINT (Ctrl+C)
-	// SIGKILL, SIGQUIT or SIGTERM (Ctrl+/) will not be caught.
-	signal.Notify(c, os.Interrupt)
+	// Accept graceful shutdowns on SIGINT (Ctrl+C) and SIGTERM (docker stop / systemd).
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
 	// Block until we receive our signal.
 	<-c
@@ -95,6 +108,14 @@ func main() {
 
 	if err := fwServer.Shutdown(ctx); err != nil {
 		log.Error().Err(err).Msg("fwServer shutdown error")
+	}
+
+	if eventRecorder != nil {
+		flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer flushCancel()
+		if err := eventRecorder.Close(flushCtx); err != nil {
+			log.Error().Err(err).Msg("security event recorder close error")
+		}
 	}
 
 	log.Info().Msg("shutting down")
@@ -130,7 +151,7 @@ func startServer(name string, port uint, handler http.Handler) *http.Server {
 	// Run our server in a goroutine so that it doesn't block.
 	go func() {
 		log.Printf("start %s server at %q", name, srv.Addr)
-		if err := srv.ListenAndServe(); err != nil {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal().Err(err).Msg("Failed to start server")
 		}
 	}()

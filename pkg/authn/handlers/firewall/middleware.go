@@ -139,6 +139,11 @@ func (f *Firewall) MemoryFirewall() *memory.Firewall {
 	return f.memFW
 }
 
+// SetEventHook registers an optional callback invoked for every firewall event.
+func (f *Firewall) SetEventHook(hook func(fw.Event)) {
+	f.fw.SetEventHook(hook)
+}
+
 func New(conf *FirewallConfig) *Firewall {
 	f := &Firewall{}
 

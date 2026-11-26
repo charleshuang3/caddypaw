@@ -81,5 +81,58 @@ func TestLoadConfigSuccess(t *testing.T) {
 
 	// Assert that the loaded config matches the sample config
 	assert.NotNil(t, loadedConfig)
+	enabled := true
+	sampleConfig.Dashboard = DashboardConfig{
+		Enabled:       &enabled,
+		RetentionDays: defaultDashboardRetentionDays,
+	}
 	assert.Equal(t, sampleConfig, loadedConfig)
+}
+
+func TestDashboardConfigDefaultsAndOverride(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpConfigFile := filepath.Join(tmpDir, "config.yaml")
+
+	disabled := false
+	sampleConfig := &Config{
+		Port:            8080,
+		BanHandlersPort: 8081,
+		GinMode:         "debug",
+		OIDC: oidc.OIDCProviderConfig{
+			Title:         "Test OIDC Provider",
+			PrivateKeyPEM: "testprivatekeypem",
+			Issuer:        "http://localhost:8080",
+			SSO: oidc.SSOConfig{
+				Google: oidc.GoogleLogin{
+					ClientID:     "testclientid",
+					ClientSecret: "testclientsecret",
+					RedirectURI:  "http://localhost:8080/callback",
+				},
+			},
+		},
+		Firewall: middleware.FirewallConfig{
+			Provider:          "none",
+			CityDBFile:        "/path/to/city.mmdb",
+			UpdatedCityDBFile: "/path/to/updated_city.mmdb",
+			ASNDBFile:         "/path/to/asn.mmdb",
+			UpdatedASNDBFile:  "/path/to/updated_asn.mmdb",
+		},
+		Dashboard: DashboardConfig{
+			Enabled:       &disabled,
+			RetentionDays: 30,
+			WebUIDir:      "/srv/webui",
+		},
+	}
+
+	configData, err := yaml.Marshal(&sampleConfig)
+	assert.NoError(t, err)
+	assert.NoError(t, os.WriteFile(tmpConfigFile, configData, 0644))
+
+	loaded := LoadConfig(tmpConfigFile)
+	assert.False(t, loaded.Dashboard.IsEnabled())
+	assert.Equal(t, uint(30), loaded.Dashboard.RetentionDays)
+	assert.Equal(t, "/srv/webui", loaded.Dashboard.WebUIDir)
+
+	var nilCfg DashboardConfig
+	assert.True(t, nilCfg.IsEnabled())
 }

@@ -46,6 +46,12 @@ func (cfg *Config) applyDefaults() {
 		logger.Warn().Msg("Using in-memory sqlite DB, should not be used in production")
 	}
 
+	if cfg.DSN == ":memory:" && cfg.MaxOpenConns <= 0 {
+		// A single connection ensures all goroutines share the same in-memory SQLite DB.
+		cfg.MaxOpenConns = 1
+		cfg.MaxIdleConns = 1
+	}
+
 	if cfg.MaxIdleConns <= 0 {
 		// golang's default.
 		cfg.MaxIdleConns = 2
@@ -104,5 +110,6 @@ func (db *DB) Migrate() error {
 		&models.User{},
 		&models.RefreshToken{},
 		&models.Invitation{},
+		&models.SecurityEvent{},
 	)
 }

@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/charleshuang3/caddypaw/pkg/authn/models"
 	"github.com/charleshuang3/caddypaw/test/e2e/testenv"
 )
 
@@ -269,6 +271,62 @@ func TestAfterAuthDetectOnly(t *testing.T) {
 			"the basic-auth style challenge must not be replaced by a WAF 403")
 	}
 	waitForBan(t, c, "127.0.0.1")
+}
+
+// TestSecurityEventPersistenceAndDashboardAPI verifies that a paw_auth/paw_waf
+// violation through Caddy is persisted to the DB and returned by the dashboard
+// REST API.
+func TestSecurityEventPersistenceAndDashboardAPI(t *testing.T) {
+	c := testenv.New(t, testenv.WithWhitelist(nil))
+	gwYAML := testenv.WriteAuthnGatewayYAML(t,
+		c.AuthnURL, c.AuthnURL+"/oauth2/token", c.AuthnURL+"/user/info", c.FirewallURL)
+	c.StartCaddy(strings.ReplaceAll(afterAuthCaddyfile, "{authn_yaml_file}", gwYAML))
+
+	attackPath := "/dav/file?q=" + url.QueryEscape("1 UNION SELECT 1,2,3--")
+	req, err := http.NewRequest(http.MethodGet, c.CaddyURL+attackPath, nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+
+	type eventsResp struct {
+		Items []models.SecurityEvent `json:"items"`
+		Total int64                  `json:"total"`
+	}
+
+	var got eventsResp
+	require.Eventually(t, func() bool {
+		r, err := http.Get(c.FirewallURL + "/api/events?host=127.0.0.1")
+		if err != nil {
+			return false
+		}
+		defer func() { _ = r.Body.Close() }()
+		if r.StatusCode != http.StatusOK {
+			return false
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			return false
+		}
+		return got.Total >= 1 && len(got.Items) >= 1
+	}, 5*time.Second, 25*time.Millisecond, "security event was not persisted")
+
+	ev := got.Items[0]
+	require.Equal(t, "127.0.0.1", ev.Host)
+	require.Equal(t, "127.0.0.1", ev.IP)
+	require.Equal(t, http.MethodGet, ev.Method)
+	require.Equal(t, "/dav/file", ev.Path)
+	require.NotEmpty(t, ev.Reason)
+
+	hostsResp, err := http.Get(c.FirewallURL + "/api/hosts")
+	require.NoError(t, err)
+	defer func() { _ = hostsResp.Body.Close() }()
+	require.Equal(t, http.StatusOK, hostsResp.StatusCode)
+
+	summaryResp, err := http.Get(c.FirewallURL + "/api/summary")
+	require.NoError(t, err)
+	defer func() { _ = summaryResp.Body.Close() }()
+	require.Equal(t, http.StatusOK, summaryResp.StatusCode)
 }
 
 // waitForBan polls until the given IP shows up in the memory firewall; the
