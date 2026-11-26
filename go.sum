@@ -208,8 +208,8 @@ github.com/glebarez/sqlite v1.11.0 h1:wSG0irqzP6VurnMEpFGer5Li19RpIRi2qvQz++w0GM
 github.com/glebarez/sqlite v1.11.0/go.mod h1:h8/o8j5wiAsqSPoWELDUdJXhjAhsVliSn7bWZjOhrgQ=
 github.com/go-chi/chi/v5 v5.5.0 h1:xdKQ1dJmVJsmgahrXSKhUx8NyVPzpwdlyrrQFpMPJgg=
 github.com/go-chi/chi/v5 v5.5.0/go.mod h1:d1IG7GtKPSjPyBP365PH8sAGVHk3qfB/IhjFNRH1wWM=
-github.com/go-co-op/gocron/v2 v2.23.1 h1:DAM4k6jfBHaaaLS0yCps8Jdq3smQZRoEg+/hwR5bLlk=
-github.com/go-co-op/gocron/v2 v2.23.1/go.mod h1:QwAfxPmGC9tPDL5R9R3inaJYPDvYEXs/zkYrXD3L9jk=
+github.com/go-co-op/gocron/v2 v2.23.2 h1:MI2iotc5ybmfcWWDZ8yL30uk8oIYm+1RK17ZEg/ivlE=
+github.com/go-co-op/gocron/v2 v2.23.2/go.mod h1:QwAfxPmGC9tPDL5R9R3inaJYPDvYEXs/zkYrXD3L9jk=
 github.com/go-jose/go-jose/v3 v3.0.5 h1:BLLJWbC4nMZOfuPVxoZIxeYsn6Nl2r1fITaJ78UQlVQ=
 github.com/go-jose/go-jose/v3 v3.0.5/go.mod h1:5b+7YgP7ZICgJDBdfjZaIt+H/9L9T/YQrVfLAMboGkQ=
 github.com/go-jose/go-jose/v4 v4.1.9 h1:pKfeQkig1NmgK4hJrZYXLEYURXfoJB61Larw0uIW4gY=
@@ -722,8 +722,8 @@ golang.org/x/tools v0.52.1-0.20261106145633-d407941a339a/go.mod h1:ItcP5UNaVGG+Y
 golang.org/x/xerrors v0.0.0-20190717185122-a985d3407aa7/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
 gonum.org/v1/gonum v0.17.0 h1:VbpOemQlsSMrYmn7T2OUvQ4dqxQXU+ouZFQsZOx50z4=
 gonum.org/v1/gonum v0.17.0/go.mod h1:El3tOrEuMpv2UdMrbNlKEh9vd86bmQ6vqIcDwxEOc1E=
-google.golang.org/api v0.315.0 h1:77nwD4sln0GQQqQKb4CY+DJhRwA0AeQ4w0gkbLwRPms=
-google.golang.org/api v0.315.0/go.mod h1:kn5kd1IMbs2x4hq99GcaTOumC0fnMYMwLNAfFxzpISU=
+google.golang.org/api v0.316.0 h1:nwaBinxtopJcOPwNYkvuRo7JA2nKppWzzk1sSORUWp4=
+google.golang.org/api v0.316.0/go.mod h1:kn5kd1IMbs2x4hq99GcaTOumC0fnMYMwLNAfFxzpISU=
 google.golang.org/genproto v0.0.0-20261110000943-09e21b237f2c h1:4nfdocNgwiZ3kcGvgxucXk/gTqG6kCkbel7m0iP5oOc=
 google.golang.org/genproto v0.0.0-20261110000943-09e21b237f2c/go.mod h1:8uJkuAUFkZ0SrS8jn4wEa0mj+e9ghn2dylqpGHbOt9A=
 google.golang.org/genproto/googleapis/api v0.0.0-20261110000943-09e21b237f2c h1:ofk4SEqvpf6M5VWh88xRp42IYgdVOh7gffebnDj3OqU=
