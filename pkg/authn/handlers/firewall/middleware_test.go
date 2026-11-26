@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/charleshuang3/caddypaw/pkg/firewall"
 	"github.com/charleshuang3/caddypaw/pkg/firewall/ipgeo"
@@ -147,6 +148,9 @@ func setupTestFirewallForMiddleware(t *testing.T) (*Firewall, *MockILogger, *gin
 	testGroup.GET("/contexterr", func(c *gin.Context) {
 		c.Set(KeyHackingError, "a error")
 	})
+	testGroup.POST("/contexterr", func(c *gin.Context) {
+		c.Set(KeyHackingError, "a error")
+	})
 	testGroup.GET("/404", func(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 	})
@@ -192,33 +196,60 @@ func TestMiddleware_NoAction(t *testing.T) {
 
 func TestMiddleware_LogErr(t *testing.T) {
 	tests := []struct {
-		name string
-		path string
+		name           string
+		method         string
+		target         string
+		expectedPath   string
+		expectedHost   string
+		expectedMethod string
 	}{
 		{
-			name: "404",
-			path: "/404",
+			name:           "404",
+			method:         http.MethodGet,
+			target:         "http://Auth.Example.COM:8080/404?secret=123",
+			expectedHost:   "auth.example.com",
+			expectedMethod: http.MethodGet,
+			expectedPath:   "/404",
 		},
 		{
-			name: "contexterr",
-			path: "/contexterr",
+			name:           "contexterr",
+			method:         http.MethodPost,
+			target:         "http://Example.org/contexterr?token=abc",
+			expectedHost:   "example.org",
+			expectedMethod: http.MethodPost,
+			expectedPath:   "/contexterr",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, logger, router := setupTestFirewallForMiddleware(t)
+			f, logger, router := setupTestFirewallForMiddleware(t)
+
+			var events []firewall.Event
+			var hookWg sync.WaitGroup
+			hookWg.Add(1)
+			f.fw.SetEventHook(func(ev firewall.Event) {
+				events = append(events, ev)
+				hookWg.Done()
+			})
 			logger.wg.Add(1)
 
 			rec := httptest.NewRecorder()
-			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			req := httptest.NewRequest(tt.method, tt.target, nil)
 
 			router.ServeHTTP(rec, req)
 
 			logger.wg.Wait()
+			hookWg.Wait()
 
 			assert.Len(t, logger.logs, 1)
-			assert.Equal(t, logger.logs[0].action, "count error")
+			assert.Equal(t, "count error", logger.logs[0].action)
+			require.Len(t, events, 1)
+			assert.Equal(t, firewall.RequestMeta{
+				Host:   tt.expectedHost,
+				Method: tt.expectedMethod,
+				Path:   tt.expectedPath,
+			}, events[0].Meta)
 		})
 	}
 }

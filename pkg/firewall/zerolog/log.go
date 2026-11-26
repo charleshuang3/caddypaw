@@ -10,7 +10,10 @@ import (
 	"github.com/charleshuang3/caddypaw/pkg/firewall/ipgeo"
 )
 
-var _ firewall.ILogger = (*ZeroLog)(nil)
+var (
+	_ firewall.ILogger      = (*ZeroLog)(nil)
+	_ firewall.IEventLogger = (*ZeroLog)(nil)
+)
 
 type ZeroLog struct {
 	logger zlog.Logger
@@ -26,16 +29,36 @@ func New(logger zlog.Logger, level zlog.Level, service string) *ZeroLog {
 }
 
 func (z *ZeroLog) Log(ip string, jailUntil time.Time, reasons []string, action string, geo *ipgeo.IPGeo) {
+	z.LogEvent(firewall.Event{
+		IP:        ip,
+		JailUntil: jailUntil,
+		Reasons:   reasons,
+		Action:    action,
+		Geo:       geo,
+	})
+}
+
+func (z *ZeroLog) LogEvent(ev firewall.Event) {
 	var b []byte
-	if geo != nil {
-		b, _ = json.Marshal(geo)
+	if ev.Geo != nil {
+		b, _ = json.Marshal(ev.Geo)
 	}
 
 	e := z.logger.WithLevel(z.level).
-		Str("ip", ip).
-		Time("jail_until", jailUntil).
-		Strs("reasons", reasons).
-		Str("action", action)
+		Str("ip", ev.IP).
+		Time("jail_until", ev.JailUntil).
+		Strs("reasons", ev.Reasons).
+		Str("action", ev.Action)
+
+	if ev.Meta.Host != "" {
+		e.Str("host", ev.Meta.Host)
+	}
+	if ev.Meta.Method != "" {
+		e.Str("method", ev.Meta.Method)
+	}
+	if ev.Meta.Path != "" {
+		e.Str("path", ev.Meta.Path)
+	}
 
 	if b != nil {
 		e.RawJSON("geo", b)

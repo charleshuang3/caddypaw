@@ -3,11 +3,16 @@ package firewall
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	fw "github.com/charleshuang3/caddypaw/pkg/firewall"
 )
 
 func setupTestFirewallForHandlers(t *testing.T) (*Firewall, *MockILogger, *gin.Engine) {
@@ -215,6 +220,92 @@ func TestHandlers(t *testing.T) {
 				time.Sleep(time.Millisecond * 100)
 				assert.Len(t, logger.logs, 0)
 			}
+		})
+	}
+}
+
+func TestLogerr_RequestMeta(t *testing.T) {
+	tests := []struct {
+		name         string
+		host         string
+		method       string
+		path         string
+		count        string
+		expectedMeta fw.RequestMeta
+		expectedAct  string
+	}{
+		{
+			name:         "counted event with host port and uppercase",
+			host:         "Auth.Example.COM:8443",
+			method:       "POST",
+			path:         "/login",
+			expectedMeta: fw.RequestMeta{Host: "auth.example.com", Method: "POST", Path: "/login"},
+			expectedAct:  "count error",
+		},
+		{
+			name:         "observed event with request meta",
+			host:         "dav.example.com",
+			method:       "PUT",
+			path:         "/files/a",
+			count:        "false",
+			expectedMeta: fw.RequestMeta{Host: "dav.example.com", Method: "PUT", Path: "/files/a"},
+			expectedAct:  "observed",
+		},
+		{
+			name:         "backward compatible without meta",
+			expectedMeta: fw.RequestMeta{},
+			expectedAct:  "count error",
+		},
+		{
+			name:         "sanitizes control chars, query string, and truncates long values",
+			host:         "evil\n.example.com",
+			method:       "GET\r\n" + strings.Repeat("X", 20),
+			path:         "/" + strings.Repeat("p", maxMetaPathLen+50) + "?secret=1",
+			expectedMeta: fw.RequestMeta{Host: "evil.example.com", Method: "GET" + strings.Repeat("X", maxMetaMethodLen-3), Path: "/" + strings.Repeat("p", maxMetaPathLen-1)},
+			expectedAct:  "count error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f, logger, router := setupTestFirewallForHandlers(t)
+
+			var events []fw.Event
+			var hookWg sync.WaitGroup
+			hookWg.Add(1)
+			f.fw.SetEventHook(func(ev fw.Event) {
+				events = append(events, ev)
+				hookWg.Done()
+			})
+
+			rec := httptest.NewRecorder()
+			req, _ := http.NewRequest(http.MethodGet, "/logerr", nil)
+			q := req.URL.Query()
+			q.Add("ip", "2.2.2.10")
+			q.Add("reason", "waf:949110")
+			if tt.host != "" {
+				q.Add("host", tt.host)
+			}
+			if tt.method != "" {
+				q.Add("method", tt.method)
+			}
+			if tt.path != "" {
+				q.Add("path", tt.path)
+			}
+			if tt.count != "" {
+				q.Add("count", tt.count)
+			}
+			req.URL.RawQuery = q.Encode()
+
+			logger.wg.Add(1)
+			router.ServeHTTP(rec, req)
+			logger.wg.Wait()
+			hookWg.Wait()
+
+			assert.Equal(t, http.StatusOK, rec.Code)
+			require.Len(t, events, 1)
+			assert.Equal(t, tt.expectedAct, events[0].Action)
+			assert.Equal(t, tt.expectedMeta, events[0].Meta)
 		})
 	}
 }

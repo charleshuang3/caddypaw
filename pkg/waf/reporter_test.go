@@ -3,6 +3,7 @@ package waf
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -175,4 +176,104 @@ func TestReporter_Weight(t *testing.T) {
 	val, ok = requestedURI.Load().(string)
 	require.True(t, ok)
 	assert.NotContains(t, val, "weight=", "a single-point report must not send the parameter")
+}
+
+func TestReporter_RequestMeta(t *testing.T) {
+	tests := []struct {
+		name           string
+		method         string
+		target         string
+		emptyHost      bool
+		observed       bool
+		expectedHost   string
+		expectedMethod string
+		expectedPath   string
+	}{
+		{
+			name:           "lowercase host, strip port, strip query string",
+			method:         http.MethodPost,
+			target:         "https://Example.COM:8443/admin/login?token=secret&pass=123",
+			expectedHost:   "example.com",
+			expectedMethod: http.MethodPost,
+			expectedPath:   "/admin/login",
+		},
+		{
+			name:           "host without port",
+			method:         http.MethodGet,
+			target:         "https://App.Example.com/health",
+			expectedHost:   "app.example.com",
+			expectedMethod: http.MethodGet,
+			expectedPath:   "/health",
+		},
+		{
+			name:           "empty host",
+			method:         http.MethodGet,
+			target:         "/status",
+			emptyHost:      true,
+			expectedHost:   "",
+			expectedMethod: http.MethodGet,
+			expectedPath:   "/status",
+		},
+		{
+			name:           "ipv6 host with port",
+			method:         http.MethodGet,
+			target:         "http://[::1]:8080/dav/file?foo=bar",
+			expectedHost:   "::1",
+			expectedMethod: http.MethodGet,
+			expectedPath:   "/dav/file",
+		},
+		{
+			name:           "observed event includes request meta without query string",
+			method:         http.MethodPut,
+			target:         "https://Files.Example.Org/upload/item?auth=xyz",
+			observed:       true,
+			expectedHost:   "files.example.org",
+			expectedMethod: http.MethodPut,
+			expectedPath:   "/upload/item",
+		},
+		{
+			name:           "oversized path is truncated",
+			method:         http.MethodGet,
+			target:         "https://example.com/" + strings.Repeat("a", maxMetaPathLen+200),
+			expectedHost:   "example.com",
+			expectedMethod: http.MethodGet,
+			expectedPath:   "/" + strings.Repeat("a", maxMetaPathLen-1),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var capturedQuery atomic.Value
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				capturedQuery.Store(r.URL.RawQuery)
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer srv.Close()
+
+			reporter := NewReporter(zaptest.NewLogger(t), srv.URL)
+			req := httptest.NewRequest(tt.method, tt.target, nil)
+			if tt.emptyHost {
+				req.Host = ""
+			}
+			req.RemoteAddr = "192.168.1.200:12345"
+
+			if tt.observed {
+				reporter.ReportObserved(req, "waf:949110")
+			} else {
+				reporter.Report(req, "waf:949110", WeightBlocked)
+			}
+
+			rawQuery, ok := capturedQuery.Load().(string)
+			require.True(t, ok)
+			q, err := url.ParseQuery(rawQuery)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.expectedHost, q.Get("host"))
+			assert.Equal(t, tt.expectedMethod, q.Get("method"))
+			assert.Equal(t, tt.expectedPath, q.Get("path"))
+			assert.NotContains(t, rawQuery, "secret")
+			assert.NotContains(t, rawQuery, "xyz")
+		})
+	}
 }

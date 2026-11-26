@@ -371,3 +371,97 @@ func TestLogIPErrorWeight(t *testing.T) {
 		assert.Equal(t, []string{ip}, mockFW.BannedIPs)
 	})
 }
+
+type mockEventLogger struct {
+	mu     sync.Mutex
+	events []Event
+	wg     sync.WaitGroup
+}
+
+func (m *mockEventLogger) Log(ip string, jailUntil time.Time, reasons []string, action string, geo *ipgeo.IPGeo) {
+	m.LogEvent(Event{
+		IP:        ip,
+		JailUntil: jailUntil,
+		Reasons:   reasons,
+		Action:    action,
+		Geo:       geo,
+	})
+}
+
+func (m *mockEventLogger) LogEvent(ev Event) {
+	m.mu.Lock()
+	m.events = append(m.events, ev)
+	m.mu.Unlock()
+	m.wg.Done()
+}
+
+func TestRequestMetaAndEventHook(t *testing.T) {
+	mockFW := &MockIFirewall{}
+	eventLogger := &mockEventLogger{}
+	forgivable := ForgivableError{Duration: time.Minute, Count: 1, BanInMinute: 5}
+	fw := New([]string{"10.0.0.1"}, mockFW, eventLogger, nil, forgivable)
+
+	var hookMu sync.Mutex
+	var hookEvents []Event
+	var hookWg sync.WaitGroup
+	fw.SetEventHook(func(ev Event) {
+		// Mutate Reasons in hook to verify it does not alias logger's slice.
+		if len(ev.Reasons) > 0 {
+			ev.Reasons[0] = "mutated"
+		}
+		hookMu.Lock()
+		hookEvents = append(hookEvents, ev)
+		hookMu.Unlock()
+		hookWg.Done()
+	})
+
+	meta1 := RequestMeta{Host: "app.example.com", Method: "POST", Path: "/login"}
+	meta2 := RequestMeta{Host: "api.example.com", Method: "GET", Path: "/v1/secret"}
+	meta3 := RequestMeta{Host: "dav.example.com", Method: "PROPFIND", Path: "/files"}
+
+	// 1. Observed event
+	eventLogger.wg.Add(1)
+	hookWg.Add(1)
+	fw.LogIPErrorObservedWithMeta("192.168.1.90", "waf:1001", meta3)
+
+	// 2. Counted error -> "count error"
+	eventLogger.wg.Add(1)
+	hookWg.Add(1)
+	fw.LogIPErrorWithMeta("192.168.1.90", "waf:1002", DefaultWeight, meta1)
+
+	// 3. Second counted error -> "ban"
+	eventLogger.wg.Add(1)
+	hookWg.Add(1)
+	fw.LogIPErrorWithMeta("192.168.1.90", "waf:1003", DefaultWeight, meta2)
+
+	// 4. Third counted error while banned -> "banned"
+	eventLogger.wg.Add(1)
+	hookWg.Add(1)
+	fw.LogIPErrorWithMeta("192.168.1.90", "waf:1004", DefaultWeight, meta2)
+
+	// 5. Whitelisted IP -> ignored (no logger, no hook)
+	fw.LogIPErrorWithMeta("10.0.0.1", "waf:1005", DefaultWeight, meta1)
+
+	eventLogger.wg.Wait()
+	hookWg.Wait()
+
+	require.Len(t, eventLogger.events, 4)
+	require.Len(t, hookEvents, 4)
+
+	assert.Equal(t, "observed", eventLogger.events[0].Action)
+	assert.Equal(t, meta3, eventLogger.events[0].Meta)
+	assert.True(t, eventLogger.events[0].Observed)
+
+	assert.Equal(t, "count error", eventLogger.events[1].Action)
+	assert.Equal(t, meta1, eventLogger.events[1].Meta)
+	assert.Equal(t, []string{"waf:1002"}, eventLogger.events[1].Reasons)
+	assert.Equal(t, 1, eventLogger.events[1].Weight)
+
+	assert.Equal(t, "ban", eventLogger.events[2].Action)
+	assert.Equal(t, meta2, eventLogger.events[2].Meta)
+	assert.Equal(t, []string{"waf:1003"}, eventLogger.events[2].Reasons)
+	assert.False(t, eventLogger.events[2].JailUntil.IsZero())
+
+	assert.Equal(t, "banned", eventLogger.events[3].Action)
+	assert.Equal(t, meta2, eventLogger.events[3].Meta)
+}

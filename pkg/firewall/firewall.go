@@ -3,6 +3,8 @@ package firewall
 import (
 	"log"
 	"net"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/adrianbrad/queue"
@@ -19,11 +21,42 @@ type ILogger interface {
 	Log(ip string, jailUntil time.Time, reasons []string, action string, geo *ipgeo.IPGeo)
 }
 
+// RequestMeta carries optional HTTP request context associated with a firewall event.
+type RequestMeta struct {
+	Host   string
+	Method string
+	Path   string
+}
+
+// Event represents a firewall decision or observation emitted by Firewall.
+type Event struct {
+	Time      time.Time
+	IP        string
+	Action    string
+	Reasons   []string
+	Weight    int
+	Observed  bool
+	JailUntil time.Time
+	Geo       *ipgeo.IPGeo
+	Meta      RequestMeta
+}
+
+// IEventLogger is an optional extension of ILogger that receives the full Event
+// including RequestMeta. Loggers that only implement ILogger continue to receive
+// Log(...) calls.
+type IEventLogger interface {
+	ILogger
+	LogEvent(ev Event)
+}
+
 type Firewall struct {
 	whiteList []*ipMatcher
 
 	ipGeo  *ipgeo.AutoUpdateMMIPGeo
 	logger ILogger
+
+	hookMu    sync.RWMutex
+	eventHook func(Event)
 
 	fw IFirewall
 
@@ -38,6 +71,8 @@ type ban struct {
 	ip              string
 	timeoutInMinute int
 	reasons         []string
+	weight          int
+	meta            RequestMeta
 }
 
 type countingError struct {
@@ -52,6 +87,7 @@ type countingError struct {
 	// forgivable allowance and without ever banning. Used by WAF detection-only
 	// mode, which must stay visible in the logs while never causing a ban.
 	observedOnly bool
+	meta         RequestMeta
 }
 
 // ForgivableError represents the suspicion budget granted to one IP within the
@@ -143,6 +179,38 @@ func (s *Firewall) inWhitelist(ip string) bool {
 	return false
 }
 
+// SetEventHook registers an optional callback invoked for every firewall event
+// (count error, ban, banned, observed). It is safe to call concurrently.
+//
+// The hook runs synchronously on the firewall event loop goroutine: it must
+// return quickly, must not mutate Event.Geo, and must not call BanIP or
+// LogIPError* inline (which would deadlock the unbuffered event channels).
+func (s *Firewall) SetEventHook(hook func(Event)) {
+	s.hookMu.Lock()
+	s.eventHook = hook
+	s.hookMu.Unlock()
+}
+
+func (s *Firewall) emit(ev Event) {
+	if ev.Time.IsZero() {
+		ev.Time = time.Now()
+	}
+	if el, ok := s.logger.(IEventLogger); ok {
+		el.LogEvent(ev)
+	} else {
+		s.logger.Log(ev.IP, ev.JailUntil, ev.Reasons, ev.Action, ev.Geo)
+	}
+
+	s.hookMu.RLock()
+	hook := s.eventHook
+	s.hookMu.RUnlock()
+	if hook != nil {
+		hookEv := ev
+		hookEv.Reasons = slices.Clone(ev.Reasons)
+		hook(hookEv)
+	}
+}
+
 func (s *Firewall) doBanIP(b *ban) {
 	if s.fw != nil {
 		s.fw.BanIP(b.ip, b.timeoutInMinute)
@@ -152,8 +220,18 @@ func (s *Firewall) doBanIP(b *ban) {
 	if s.ipGeo != nil {
 		geo = s.ipGeo.GetIPGeo(b.ip)
 	}
-	jailUntil := time.Now().Add(time.Duration(b.timeoutInMinute) * time.Minute)
-	s.logger.Log(b.ip, jailUntil, b.reasons, "ban", geo)
+	now := time.Now()
+	jailUntil := now.Add(time.Duration(b.timeoutInMinute) * time.Minute)
+	s.emit(Event{
+		Time:      now,
+		IP:        b.ip,
+		Action:    "ban",
+		Reasons:   b.reasons,
+		Weight:    b.weight,
+		JailUntil: jailUntil,
+		Geo:       geo,
+		Meta:      b.meta,
+	})
 }
 
 // BanIP imimmediately
@@ -176,7 +254,13 @@ func (s *Firewall) doCountError(c *countingError) {
 	}
 
 	if ec.bannedUntil.After(time.Now()) {
-		s.logger.Log(c.ip, time.Time{}, []string{c.reason}, "banned", nil)
+		s.emit(Event{
+			IP:      c.ip,
+			Action:  "banned",
+			Reasons: []string{c.reason},
+			Weight:  c.weight,
+			Meta:    c.meta,
+		})
 		return
 	}
 
@@ -206,7 +290,14 @@ func (s *Firewall) doCountError(c *countingError) {
 		if s.ipGeo != nil {
 			geo = s.ipGeo.GetIPGeo(c.ip)
 		}
-		s.logger.Log(c.ip, time.Time{}, []string{c.reason}, "count error", geo)
+		s.emit(Event{
+			IP:      c.ip,
+			Action:  "count error",
+			Reasons: []string{c.reason},
+			Weight:  weight,
+			Geo:     geo,
+			Meta:    c.meta,
+		})
 		return
 	}
 
@@ -223,6 +314,8 @@ func (s *Firewall) doCountError(c *countingError) {
 		ip:              c.ip,
 		timeoutInMinute: s.forgivable.BanInMinute,
 		reasons:         reasons,
+		weight:          weight,
+		meta:            c.meta,
 	})
 }
 
@@ -233,6 +326,13 @@ func (s *Firewall) doCountError(c *countingError) {
 // DefaultWeight so that a caller cannot make a violation free by accident (use
 // LogIPErrorObserved for events that must not count at all).
 func (s *Firewall) LogIPError(ip string, reason string, weight int) {
+	s.LogIPErrorWithMeta(ip, reason, weight, RequestMeta{})
+}
+
+// LogIPErrorWithMeta counts an error happened on a request from the given ip
+// along with its HTTP request metadata, banning the ip once its allowance is
+// exhausted.
+func (s *Firewall) LogIPErrorWithMeta(ip string, reason string, weight int, meta RequestMeta) {
 	if weight < DefaultWeight {
 		weight = DefaultWeight
 	}
@@ -240,6 +340,7 @@ func (s *Firewall) LogIPError(ip string, reason string, weight int) {
 		ip:     ip,
 		reason: reason,
 		weight: weight,
+		meta:   meta,
 	}
 }
 
@@ -247,10 +348,18 @@ func (s *Firewall) LogIPError(ip string, reason string, weight int) {
 // the forgivable allowance. It never bans, which is what detection-only WAF mode
 // needs: the match stays visible in the log while the IP keeps its full budget.
 func (s *Firewall) LogIPErrorObserved(ip string, reason string) {
+	s.LogIPErrorObservedWithMeta(ip, reason, RequestMeta{})
+}
+
+// LogIPErrorObservedWithMeta logs an observed-only error from the given ip
+// along with its HTTP request metadata without counting it against the
+// forgivable allowance.
+func (s *Firewall) LogIPErrorObservedWithMeta(ip string, reason string, meta RequestMeta) {
 	s.countCh <- countingError{
 		ip:           ip,
 		reason:       reason,
 		observedOnly: true,
+		meta:         meta,
 	}
 }
 
@@ -261,5 +370,12 @@ func (s *Firewall) doObserveError(c *countingError) {
 	if s.ipGeo != nil {
 		geo = s.ipGeo.GetIPGeo(c.ip)
 	}
-	s.logger.Log(c.ip, time.Time{}, []string{c.reason}, "observed", geo)
+	s.emit(Event{
+		IP:       c.ip,
+		Action:   "observed",
+		Reasons:  []string{c.reason},
+		Observed: true,
+		Geo:      geo,
+		Meta:     c.meta,
+	})
 }

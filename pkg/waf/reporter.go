@@ -69,6 +69,56 @@ func (r *Reporter) ReportObserved(req *http.Request, reason string) {
 	r.report(req, reason, 0, false)
 }
 
+const (
+	maxMetaHostLen   = 253
+	maxMetaMethodLen = 16
+	maxMetaPathLen   = 1024
+)
+
+type reportMeta struct {
+	host   string
+	method string
+	path   string
+}
+
+func sanitizeMetaValue(s string, maxLen int) string {
+	s = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
+	if len(s) > maxLen {
+		s = strings.ToValidUTF8(s[:maxLen], "")
+	}
+	return s
+}
+
+func extractReportMeta(req *http.Request) reportMeta {
+	host := req.Host
+	if host == "" && req.URL != nil {
+		host = req.URL.Host
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.ToLower(strings.TrimSpace(host))
+	host = sanitizeMetaValue(host, maxMetaHostLen)
+
+	method := sanitizeMetaValue(strings.TrimSpace(req.Method), maxMetaMethodLen)
+
+	var path string
+	if req.URL != nil {
+		path = sanitizeMetaValue(req.URL.Path, maxMetaPathLen)
+	}
+
+	return reportMeta{
+		host:   host,
+		method: method,
+		path:   path,
+	}
+}
+
 func (r *Reporter) report(req *http.Request, reason string, weight int, count bool) {
 	if r == nil || r.firewallURL == "" || req == nil {
 		return
@@ -77,10 +127,14 @@ func (r *Reporter) report(req *http.Request, reason string, weight int, count bo
 	if host, _, err := net.SplitHostPort(ip); err == nil {
 		ip = host
 	}
-	r.reportIP(ip, reason, weight, count)
+	r.reportIPWithMeta(ip, reason, weight, count, extractReportMeta(req))
 }
 
 func (r *Reporter) reportIP(ip string, reason string, weight int, count bool) {
+	r.reportIPWithMeta(ip, reason, weight, count, reportMeta{})
+}
+
+func (r *Reporter) reportIPWithMeta(ip string, reason string, weight int, count bool, meta reportMeta) {
 	if r == nil || r.firewallURL == "" {
 		return
 	}
@@ -95,6 +149,15 @@ func (r *Reporter) reportIP(ip string, reason string, weight int, count bool) {
 		q.Set("count", "false")
 	} else if weight > 1 {
 		q.Set("weight", strconv.Itoa(weight))
+	}
+	if meta.host != "" {
+		q.Set("host", meta.host)
+	}
+	if meta.method != "" {
+		q.Set("method", meta.method)
+	}
+	if meta.path != "" {
+		q.Set("path", meta.path)
 	}
 	u := r.firewallURL + "/logerr?" + q.Encode()
 

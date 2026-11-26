@@ -11,7 +11,10 @@ import (
 	"github.com/charleshuang3/caddypaw/pkg/firewall/ipgeo"
 )
 
-var _ firewall.ILogger = (*Logger)(nil)
+var (
+	_ firewall.ILogger      = (*Logger)(nil)
+	_ firewall.IEventLogger = (*Logger)(nil)
+)
 
 type Logger struct {
 	client *logging.Client
@@ -43,17 +46,33 @@ type logEntry struct {
 	Reasons   []string     `json:"reasons"`
 	Action    string       `json:"action"`
 	Geo       *ipgeo.IPGeo `json:"geo"`
+	Host      string       `json:"host,omitempty"`
+	Method    string       `json:"method,omitempty"`
+	Path      string       `json:"path,omitempty"`
 }
 
 func (s *Logger) Log(ip string, jailUntil time.Time, reasons []string, action string, geo *ipgeo.IPGeo) {
+	s.LogEvent(firewall.Event{
+		IP:        ip,
+		JailUntil: jailUntil,
+		Reasons:   reasons,
+		Action:    action,
+		Geo:       geo,
+	})
+}
+
+func (s *Logger) LogEvent(ev firewall.Event) {
 	e := &logEntry{
-		IP:      ip,
-		Reasons: reasons,
-		Action:  action,
-		Geo:     geo,
+		IP:      ev.IP,
+		Reasons: ev.Reasons,
+		Action:  ev.Action,
+		Geo:     ev.Geo,
+		Host:    ev.Meta.Host,
+		Method:  ev.Meta.Method,
+		Path:    ev.Meta.Path,
 	}
-	if !jailUntil.IsZero() {
-		e.JailUntil = jailUntil.Format(time.RFC3339)
+	if !ev.JailUntil.IsZero() {
+		e.JailUntil = ev.JailUntil.Format(time.RFC3339)
 	}
 
 	s.logger.Log(logging.Entry{Payload: e})

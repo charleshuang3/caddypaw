@@ -1,8 +1,10 @@
 package firewall
 
 import (
+	"net"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -195,6 +197,55 @@ func New(conf *FirewallConfig) *Firewall {
 	return f
 }
 
+const (
+	maxMetaHostLen   = 253
+	maxMetaMethodLen = 16
+	maxMetaPathLen   = 1024
+)
+
+func sanitizeMetaValue(s string, maxLen int) string {
+	s = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
+	if len(s) > maxLen {
+		s = strings.ToValidUTF8(s[:maxLen], "")
+	}
+	return s
+}
+
+func normalizeHost(host string) string {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.ToLower(strings.TrimSpace(host))
+	return sanitizeMetaValue(host, maxMetaHostLen)
+}
+
+func sanitizeRequestMeta(host, method, path string) fw.RequestMeta {
+	if i := strings.IndexByte(path, '?'); i >= 0 {
+		path = path[:i]
+	}
+	return fw.RequestMeta{
+		Host:   normalizeHost(host),
+		Method: sanitizeMetaValue(strings.TrimSpace(method), maxMetaMethodLen),
+		Path:   sanitizeMetaValue(path, maxMetaPathLen),
+	}
+}
+
+func requestMetaFromGin(c *gin.Context) fw.RequestMeta {
+	if c == nil || c.Request == nil {
+		return fw.RequestMeta{}
+	}
+	var path string
+	if c.Request.URL != nil {
+		path = c.Request.URL.Path
+	}
+	return sanitizeRequestMeta(c.Request.Host, c.Request.Method, path)
+}
+
 func (f *Firewall) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// run handle
@@ -204,14 +255,14 @@ func (f *Firewall) Middleware() gin.HandlerFunc {
 		reason, ok := c.Get(KeyHackingError)
 		if ok {
 			ip := c.ClientIP()
-			f.fw.LogIPError(ip, reason.(string), fw.DefaultWeight)
+			f.fw.LogIPErrorWithMeta(ip, reason.(string), fw.DefaultWeight, requestMetaFromGin(c))
 			return
 		}
 
 		// this means user request to url undefined in router.
 		if c.Writer.Status() == http.StatusNotFound {
 			ip := c.ClientIP()
-			f.fw.LogIPError(ip, "undefined_url", fw.DefaultWeight)
+			f.fw.LogIPErrorWithMeta(ip, "undefined_url", fw.DefaultWeight, requestMetaFromGin(c))
 			return
 		}
 	}

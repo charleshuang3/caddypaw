@@ -4,6 +4,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	fw "github.com/charleshuang3/caddypaw/pkg/firewall"
 )
 
 func (f *Firewall) RegisterHandlers(rg *gin.RouterGroup) {
@@ -25,6 +27,14 @@ type firewallRequest struct {
 	// events never consume the IP's forgivable allowance and never ban, which is
 	// what WAF detection-only mode needs.
 	Count *bool `form:"count"`
+	// Optional HTTP request context propagated by gateways (e.g. Caddy WAF/auth).
+	Host   string `form:"host"`
+	Method string `form:"method"`
+	Path   string `form:"path"`
+}
+
+func (r *firewallRequest) requestMeta() fw.RequestMeta {
+	return sanitizeRequestMeta(r.Host, r.Method, r.Path)
 }
 
 // counts reports whether the event must consume ban allowance. Omitting the
@@ -68,10 +78,11 @@ func (f *Firewall) logError(c *gin.Context) {
 		return
 	}
 
+	meta := req.requestMeta()
 	if !req.counts() {
-		f.fw.LogIPErrorObserved(req.IP, req.Reason)
+		f.fw.LogIPErrorObservedWithMeta(req.IP, req.Reason, meta)
 		return
 	}
 
-	f.fw.LogIPError(req.IP, req.Reason, req.eventWeight())
+	f.fw.LogIPErrorWithMeta(req.IP, req.Reason, req.eventWeight(), meta)
 }
