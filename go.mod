@@ -14,7 +14,7 @@ require (
 	github.com/dgraph-io/ristretto/v2 v2.4.2
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/sqlite v1.11.0
-	github.com/go-co-op/gocron/v2 v2.23.1
+	github.com/go-co-op/gocron/v2 v2.23.2
 	github.com/go-routeros/routeros/v3 v3.0.1
 	github.com/goccy/go-yaml v1.19.2
 	github.com/hashicorp/go-set/v3 v3.0.1
@@ -27,7 +27,7 @@ require (
 	golang.org/x/crypto v0.59.0
 	golang.org/x/oauth2 v0.38.0
 	golang.org/x/time v0.16.0
-	google.golang.org/api v0.315.0
+	google.golang.org/api v0.316.0
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
 )
