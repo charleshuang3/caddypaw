@@ -5,6 +5,7 @@ import tailwindcss from "@tailwindcss/vite";
 const apiTarget = process.env.VITE_API_TARGET ?? "http://127.0.0.1:8082";
 
 export default defineConfig({
+  base: "./",
   plugins: [vue(), tailwindcss()],
   server: {
     port: 5173,

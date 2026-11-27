@@ -38,10 +38,10 @@ describe("api client", () => {
   it("fetches events, hosts, and summary with expected URLs", async () => {
     const fetchMock = vi.fn<typeof fetch>(async (input) => {
       const url = String(input);
-      if (url.startsWith("/api/hosts")) {
+      if (url.startsWith("./api/hosts")) {
         return { ok: true, json: async () => ({ hosts: [] }) } as Response;
       }
-      if (url.startsWith("/api/summary")) {
+      if (url.startsWith("./api/summary")) {
         return {
           ok: true,
           json: async () => ({
@@ -63,19 +63,19 @@ describe("api client", () => {
 
     await fetchEvents({ host: "app.example.com", page: 1, page_size: 25, q: "1.2.3.4" });
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/events?page=1&page_size=25&host=app.example.com&q=1.2.3.4",
+      "./api/events?page=1&page_size=25&host=app.example.com&q=1.2.3.4",
       expect.objectContaining({ headers: { Accept: "application/json" } }),
     );
 
     await fetchHosts({ from: "2026-11-25T00:00:00Z" });
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/hosts?from=2026-11-25T00%3A00%3A00Z",
+      "./api/hosts?from=2026-11-25T00%3A00%3A00Z",
       expect.any(Object),
     );
 
     await fetchSummary({ from: "2026-11-25T00:00:00Z" });
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/summary?from=2026-11-25T00%3A00%3A00Z",
+      "./api/summary?from=2026-11-25T00%3A00%3A00Z",
       expect.any(Object),
     );
   });
@@ -106,7 +106,7 @@ describe("api client", () => {
     );
 
     await expect(fetchEvents({})).rejects.toEqual(
-      new ApiError(500, "Invalid response shape from /api/events"),
+      new ApiError(500, "Invalid response shape from ./api/events"),
     );
   });
 

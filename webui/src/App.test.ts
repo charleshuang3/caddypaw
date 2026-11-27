@@ -97,13 +97,13 @@ describe("App dashboard", () => {
   function mockFetchSuccess() {
     const fetchMock = vi.fn<typeof fetch>(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.startsWith("/api/summary")) {
+      if (url.startsWith("./api/summary")) {
         return { ok: true, json: async () => sampleSummary } as Response;
       }
-      if (url.startsWith("/api/hosts")) {
+      if (url.startsWith("./api/hosts")) {
         return { ok: true, json: async () => sampleHosts } as Response;
       }
-      if (url.startsWith("/api/events")) {
+      if (url.startsWith("./api/events")) {
         const parsed = new URL(url, "http://localhost");
         const host = parsed.searchParams.get("host");
         const items = host
@@ -251,7 +251,7 @@ describe("App dashboard", () => {
       "fetch",
       vi.fn<typeof fetch>(async (input) => {
         const url = String(input);
-        if (url.startsWith("/api/summary")) {
+        if (url.startsWith("./api/summary")) {
           return {
             ok: true,
             json: async () => ({
@@ -264,7 +264,7 @@ describe("App dashboard", () => {
             }),
           } as Response;
         }
-        if (url.startsWith("/api/hosts")) {
+        if (url.startsWith("./api/hosts")) {
           return { ok: true, json: async () => ({ hosts: [] }) } as Response;
         }
         return {

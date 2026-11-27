@@ -94,9 +94,9 @@ export async function fetchEvents(
     observed: params.observed,
     q: params.q,
   });
-  const data = await fetchJson<EventsResponse>(`/api/events${qs}`, signal);
+  const data = await fetchJson<EventsResponse>(`./api/events${qs}`, signal);
   if (!data || !Array.isArray(data.items) || typeof data.total !== "number") {
-    throw new ApiError(500, "Invalid response shape from /api/events");
+    throw new ApiError(500, "Invalid response shape from ./api/events");
   }
   return data;
 }
@@ -109,9 +109,9 @@ export async function fetchHosts(
     from: params.from,
     to: params.to,
   });
-  const data = await fetchJson<HostsResponse>(`/api/hosts${qs}`, signal);
+  const data = await fetchJson<HostsResponse>(`./api/hosts${qs}`, signal);
   if (!data || !Array.isArray(data.hosts)) {
-    throw new ApiError(500, "Invalid response shape from /api/hosts");
+    throw new ApiError(500, "Invalid response shape from ./api/hosts");
   }
   return data;
 }
@@ -124,9 +124,9 @@ export async function fetchSummary(
     from: params.from,
     to: params.to,
   });
-  const data = await fetchJson<SecurityEventSummary>(`/api/summary${qs}`, signal);
+  const data = await fetchJson<SecurityEventSummary>(`./api/summary${qs}`, signal);
   if (!data || !Array.isArray(data.top_hosts) || !Array.isArray(data.top_reasons)) {
-    throw new ApiError(500, "Invalid response shape from /api/summary");
+    throw new ApiError(500, "Invalid response shape from ./api/summary");
   }
   return data;
 }
