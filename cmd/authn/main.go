@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -80,7 +81,7 @@ func main() {
 	fwRouter := newRouter(cfg.TrustedProxies)
 	fw.RegisterHandlers(fwRouter.Group("/"))
 	if cfg.Dashboard.IsEnabled() {
-		dashHandler := dashboard.New(db, cfg.Dashboard.WebUIDir)
+		dashHandler := dashboard.New(db, defaultWebUIDir(cfg.Dashboard.WebUIDir))
 		dashHandler.RegisterHandlers(fwRouter.Group("/"))
 		dashHandler.RegisterStatic(fwRouter)
 	}
@@ -120,6 +121,44 @@ func main() {
 
 	log.Info().Msg("shutting down")
 	os.Exit(0)
+}
+
+// defaultWebUIDir returns the configured WebUI directory if non-empty, or falls
+// back to a built WebUI directory under the working directory (./webui/dist
+// locally, ./webui in the Docker image) or alongside the binary. Directories
+// containing package.json are skipped so the unbuilt Vite source tree is never
+// auto-selected.
+func defaultWebUIDir(configured string) string {
+	if configured != "" {
+		return configured
+	}
+	candidates := []string{"./webui/dist", "./webui"}
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "webui"))
+	}
+	for _, candidate := range candidates {
+		if isBuiltWebUIDir(candidate) {
+			log.Info().Str("webui_dir", candidate).Msg("Auto-detected WebUI directory")
+			return candidate
+		}
+	}
+	log.Info().Msg("No built WebUI directory found; static serving disabled")
+	return ""
+}
+
+func isBuiltWebUIDir(dir string) bool {
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	indexInfo, err := os.Stat(filepath.Join(dir, "index.html"))
+	if err != nil || indexInfo.IsDir() {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(dir, "package.json")); err == nil {
+		return false
+	}
+	return true
 }
 
 // newRouter builds a gin engine for every authn HTTP server.

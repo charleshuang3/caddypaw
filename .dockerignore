@@ -1,0 +1,5 @@
+bin
+.git
+.local
+webui/node_modules
+webui/dist

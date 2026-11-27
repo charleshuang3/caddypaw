@@ -10,6 +10,7 @@ env:
   GO_VERSION: '1.27.4'
   GOIMPORTS_VERSION: v0.52.0
   GOLANGCI_LINT_VERSION: v2.15.0
+  NODE_VERSION: '24'
 
 jobs:
   backend:
@@ -47,3 +48,38 @@ jobs:
       - name: Run tests with the race detector
         run: |
           CGO_ENABLED=1 go test -race ./...
+
+  webui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webui
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: webui/package.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: webui/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Format check
+        run: pnpm run fmt:check
+
+      - name: Lint check
+        run: pnpm run lint
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Run tests
+        run: pnpm run test

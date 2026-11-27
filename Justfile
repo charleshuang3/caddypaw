@@ -7,9 +7,14 @@ export PATH := `go env GOPATH` + "/bin:" + env('PATH')
 # Caddy version to build
 CADDY_VERSION := "v2.11.9"
 
+# Install WebUI dependencies
+webui-install:
+    cd webui && pnpm install --frozen-lockfile
+
 # Build all packages
 build:
     go build -v ./...
+    cd webui && pnpm run build
 
 # Build caddy binary with the caddypaw plugin using xcaddy
 build-caddy:
@@ -19,13 +24,15 @@ build-caddy:
         --replace github.com/charleshuang3/caddypaw=. \
         --output bin/caddy
 
-# Run linters using golangci-lint
+# Run linters using golangci-lint and oxlint
 lint:
     golangci-lint run ./...
+    cd webui && pnpm run lint
 
 # Run tests
 test:
     go test -v ./...
+    cd webui && pnpm run test
 
 # Run tests with the race detector (requires cgo)
 test-race:
@@ -43,13 +50,15 @@ update-go-deps:
 # Update dependencies
 update-deps: update-go-deps
 
-# Format code with goimports
+# Format code with goimports and oxfmt
 fmt:
     goimports -w -local "github.com/charleshuang3/caddypaw" .
+    cd webui && pnpm run fmt
 
-# Check code formatting with goimports
+# Check code formatting with goimports and oxfmt
 fmt-check:
     @test -z "$(goimports -local "github.com/charleshuang3/caddypaw" -l .)" || (echo "Unformatted Go files found:" && goimports -local "github.com/charleshuang3/caddypaw" -l . && exit 1)
+    cd webui && pnpm run fmt:check
 
 # Build authn Docker image
 build-authn-image:
@@ -61,4 +70,4 @@ build-caddy-image:
 
 # Clean build artifacts
 clean:
-    rm -rf bin
+    rm -rf bin webui/dist
